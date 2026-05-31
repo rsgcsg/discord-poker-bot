@@ -76,25 +76,34 @@ HTML = """
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
-      background: radial-gradient(circle at top, #182636 0, var(--bg) 54%);
+      background: #05090d;
       color: var(--text);
       font-family: Arial, Helvetica, sans-serif;
-      overflow-x: hidden;
+      overflow: hidden;
     }
     .app {
-      min-height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr;
+      width: 100vw;
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
     }
     header {
+      position: absolute;
+      z-index: 5;
+      top: max(12px, env(safe-area-inset-top));
+      left: max(14px, env(safe-area-inset-left));
+      right: max(14px, env(safe-area-inset-right));
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 18px;
-      padding: 14px 22px;
-      background: rgba(10, 16, 23, .86);
-      border-bottom: 1px solid var(--line);
+      padding: 10px 14px;
+      background: rgba(7, 13, 19, .84);
+      border: 1px solid rgba(143, 169, 188, .28);
+      border-radius: 8px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(10px);
+      pointer-events: auto;
     }
     h1 {
       margin: 0;
@@ -116,32 +125,68 @@ HTML = """
       background: rgba(17, 27, 38, .8);
     }
     main {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
-      gap: 16px;
-      padding: 16px;
-      align-items: stretch;
+      width: 100%;
+      height: 100%;
     }
     .stage {
-      min-height: calc(100vh - 90px);
+      position: relative;
+      width: 100%;
+      height: 100%;
       display: grid;
       place-items: center;
-      background: #071018;
-      border: 1px solid var(--line);
+      background: #04080b;
       overflow: hidden;
     }
     .stage img {
       display: block;
-      width: min(100%, calc((100vh - 98px) * 1.579));
-      max-height: calc(100vh - 98px);
+      width: min(100vw, calc(100vh * 1.579));
+      width: min(100vw, calc(100dvh * 1.579));
+      max-width: 100vw;
+      max-height: 100vh;
+      max-height: 100dvh;
       object-fit: contain;
+      filter: drop-shadow(0 26px 60px rgba(0, 0, 0, .48));
     }
-    aside {
-      background: rgba(17, 27, 38, .88);
-      border: 1px solid var(--line);
-      padding: 16px;
+    .table-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .float-window {
+      position: absolute;
+      z-index: 4;
+      pointer-events: auto;
+      background: rgba(9, 16, 23, .88);
+      border: 1px solid rgba(143, 169, 188, .28);
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .32);
+      backdrop-filter: blur(10px);
+    }
+    .auth-window {
+      top: 76px;
+      left: max(14px, env(safe-area-inset-left));
+      width: min(312px, calc(100vw - 28px));
+    }
+    .info-window {
+      top: 76px;
+      right: max(14px, env(safe-area-inset-right));
+      width: min(330px, calc(100vw - 28px));
+      max-height: min(58vh, 520px);
       overflow: auto;
-      max-height: calc(100vh - 90px);
+    }
+    .action-window {
+      left: 50%;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(640px, calc(100vw - 28px));
+      transform: translateX(-50%);
+    }
+    .dealer-window {
+      left: max(14px, env(safe-area-inset-left));
+      bottom: max(158px, calc(env(safe-area-inset-bottom) + 158px));
+      width: min(340px, calc(100vw - 28px));
+      max-height: 46vh;
+      overflow: auto;
     }
     h2 {
       margin: 0 0 12px;
@@ -174,7 +219,6 @@ HTML = """
     .controls {
       display: grid;
       gap: 10px;
-      margin-bottom: 18px;
     }
     button, select, input, a.button {
       width: 100%;
@@ -214,66 +258,134 @@ HTML = """
       min-height: 18px;
       font-size: 13px;
     }
+    .panel-title {
+      margin: 0 0 10px;
+      color: var(--gold);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .seat-list {
+      display: grid;
+      gap: 2px;
+    }
+    #actionButtons {
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    }
+    #raiseAmount {
+      max-width: 220px;
+      justify-self: center;
+    }
+    #offlineControls {
+      display: grid;
+      gap: 8px;
+    }
     @media (max-width: 920px) {
-      main { grid-template-columns: 1fr; }
-      aside { max-height: none; }
-      .stage { min-height: auto; }
-      .stage img { width: 100%; max-height: none; }
-      header { align-items: flex-start; flex-direction: column; }
+      body { overflow: auto; }
+      .app {
+        min-height: 100vh;
+        min-height: 100dvh;
+        height: auto;
+      }
+      .stage {
+        min-height: max(100vh, 840px);
+        min-height: max(100dvh, 840px);
+        align-items: center;
+        overflow: visible;
+      }
+      .stage img {
+        width: 100vw;
+        max-height: 100vh;
+        max-height: 100dvh;
+      }
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+      }
       .meta { flex-wrap: wrap; white-space: normal; }
+      .auth-window, .info-window, .dealer-window, .action-window {
+        left: 12px;
+        right: 12px;
+        width: auto;
+        transform: none;
+      }
+      .auth-window { top: 116px; }
+      .info-window {
+        top: auto;
+        bottom: 326px;
+        max-height: 22vh;
+      }
+      .dealer-window {
+        top: auto;
+        bottom: 178px;
+        max-height: 24vh;
+      }
+      .action-window {
+        bottom: 12px;
+      }
+      #actionButtons {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <header>
-      <h1 id="title">Texas Hold'em Table</h1>
-      <div class="meta">
-        <span class="pill" id="phase">Loading</span>
-        <span class="pill" id="pot">Pot -</span>
-        <span class="pill" id="viewer">Not signed in</span>
-        <span class="pill" id="updated">Connecting</span>
-      </div>
-    </header>
     <main>
       <section class="stage">
         <img id="tableImage" alt="Poker table">
+        <div class="table-overlay">
+          <header>
+            <h1 id="title">Texas Hold'em Table</h1>
+            <div class="meta">
+              <span class="pill" id="phase">Loading</span>
+              <span class="pill" id="pot">Pot -</span>
+              <span class="pill" id="viewer">Not signed in</span>
+              <span class="pill" id="updated">Connecting</span>
+            </div>
+          </header>
+
+          <div class="float-window auth-window controls" id="authPanel"></div>
+
+          <div class="float-window info-window">
+            <h2 class="panel-title">Table Window</h2>
+            <div id="facts"></div>
+            <h2 class="panel-title" style="margin-top:12px">Seats</h2>
+            <div id="seats" class="seat-list"></div>
+            <h2 class="panel-title" style="margin-top:12px">Last Result</h2>
+            <div id="result" class="row">-</div>
+          </div>
+
+          <div class="float-window dealer-window controls" id="tableControls">
+            <h2 class="panel-title">Table Actions</h2>
+            <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
+            <div class="grid2">
+              <input id="seatNumber" type="number" min="1" placeholder="Seat">
+              <button onclick="postSeatMove()">Move My Seat</button>
+            </div>
+            <div id="offlineControls">
+              <input id="boardCards" placeholder="Board: Ah Kd Qs 7c 2h">
+              <button onclick="postOfflineBoard()">Set Board</button>
+              <select id="cardPlayer"></select>
+              <input id="holeCards" placeholder="Player cards: As Ad">
+              <button onclick="postOfflineCards()">Set Player Cards</button>
+              <select id="actor"></select>
+              <button onclick="postTableAction('showdown')">Showdown</button>
+              <button onclick="postManualAward()">Manual Award To Selected Player</button>
+            </div>
+            <div id="message" class="message"></div>
+          </div>
+
+          <div class="float-window action-window controls" id="playerControls">
+            <div class="row"><span>Your cards</span><strong id="yourCards">-</strong></div>
+            <div class="row"><span>Status</span><strong id="yourStatus">Waiting</strong></div>
+            <div id="actionButtons" class="controls"></div>
+            <input id="raiseAmount" type="number" min="1" placeholder="Raise total">
+            <div id="playerMessage" class="message"></div>
+          </div>
+        </div>
       </section>
-      <aside>
-        <div class="controls" id="authPanel"></div>
-        <h2>Controls</h2>
-        <div class="controls" id="tableControls">
-          <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
-          <div class="grid2">
-            <input id="seatNumber" type="number" min="1" placeholder="Seat">
-            <button onclick="postSeatMove()">Move My Seat</button>
-          </div>
-          <div id="offlineControls">
-            <input id="boardCards" placeholder="Board: Ah Kd Qs 7c 2h">
-            <button onclick="postOfflineBoard()">Set Board</button>
-            <select id="cardPlayer"></select>
-            <input id="holeCards" placeholder="Player cards: As Ad">
-            <button onclick="postOfflineCards()">Set Player Cards</button>
-            <select id="actor"></select>
-            <button onclick="postTableAction('showdown')">Showdown</button>
-            <button onclick="postManualAward()">Manual Award To Selected Player</button>
-          </div>
-          <div id="message" class="message"></div>
-        </div>
-        <div class="controls" id="playerControls">
-          <div class="row"><span>Your cards</span><strong id="yourCards">-</strong></div>
-          <div class="row"><span>Status</span><strong id="yourStatus">Waiting</strong></div>
-          <div id="actionButtons" class="controls"></div>
-          <input id="raiseAmount" type="number" min="1" placeholder="Raise total">
-          <div id="playerMessage" class="message"></div>
-        </div>
-        <h2>Table</h2>
-        <div id="facts"></div>
-        <h2 style="margin-top:18px">Seats</h2>
-        <div id="seats"></div>
-        <h2 style="margin-top:18px">Last Result</h2>
-        <div id="result" class="row">-</div>
-      </aside>
     </main>
   </div>
   <script>
