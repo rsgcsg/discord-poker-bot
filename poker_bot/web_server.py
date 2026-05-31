@@ -351,14 +351,7 @@ HTML = """
     let activityAuthAttempted = false;
     let activityAuthRunning = false;
     let activityAuthFailed = false;
-
-    authPanel.addEventListener('click', event => {
-      const target = event.target.closest('[data-auth-action]');
-      if (!target) return;
-      if (target.dataset.authAction === 'retry') {
-        startDiscordActivityAuth(target.dataset.clientId || (latest && latest.activity_client_id) || '');
-      }
-    });
+    let activityAuthError = '';
 
     const tableFactObjects = [
       { label: 'Game', value: data => `${data.mode.toUpperCase()} Texas Hold'em` },
@@ -552,7 +545,7 @@ HTML = """
         const status = activityAuthRunning
           ? '<div class="message">Authorizing with Discord...</div>'
           : activityAuthFailed
-            ? '<div class="message">Discord authorization did not start. Use the Open Poker App button in Discord, not the browser backup link.</div>'
+            ? `<div class="message">${html(activityAuthFailureText())}</div>`
             : '<div class="message">Authorizing with Discord automatically...</div>';
         authPanel.innerHTML = `
           <h2 class="panel-title drag-handle" data-drag-handle>Login</h2>
@@ -586,6 +579,11 @@ HTML = """
 
     function authMessageTarget() {
       return document.getElementById('authMessage') || message;
+    }
+
+    function activityAuthFailureText() {
+      const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
+      return `Discord Activity login is not available in this window.${detail} Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     function updatePlayerSelects(data) {
@@ -710,10 +708,17 @@ HTML = """
     }
 
     async function startDiscordActivityAuth(clientId) {
-      if (!clientId || activityAuthRunning) return;
+      if (activityAuthRunning) return;
       activityAuthAttempted = true;
+      if (!clientId) {
+        activityAuthFailed = true;
+        activityAuthError = 'DISCORD_CLIENT_ID is missing on the server.';
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: '' });
+        return;
+      }
       activityAuthRunning = true;
       activityAuthFailed = false;
+      activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
         const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
@@ -733,6 +738,7 @@ HTML = """
       } catch (error) {
         activityAuthRunning = false;
         activityAuthFailed = true;
+        activityAuthError = error && error.message ? error.message : String(error);
         renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       }
     }
@@ -897,6 +903,15 @@ LOBBY_HTML = """
     let activityAuthAttempted = false;
     let activityAuthRunning = false;
     let activityAuthFailed = false;
+    let activityAuthError = '';
+
+    authPanel.addEventListener('click', event => {
+      const target = event.target.closest('[data-auth-action]');
+      if (!target) return;
+      if (target.dataset.authAction === 'retry') {
+        startDiscordActivityAuth(target.dataset.clientId || (latest && latest.activity_client_id) || '');
+      }
+    });
 
     function text(value) {
       return value === null || value === undefined || value === '' ? '-' : String(value);
@@ -942,7 +957,7 @@ LOBBY_HTML = """
       const status = activityAuthRunning
         ? '<p class="message">Authorizing with Discord...</p>'
         : activityAuthFailed
-          ? '<p class="message">Discord authorization did not start. Use the Open Poker App button in Discord, not the browser backup link.</p>'
+          ? `<p class="message">${html(activityAuthFailureText())}</p>`
           : '<p class="message">Authorizing with Discord automatically...</p>';
       authPanel.innerHTML = `
         <h2>Discord Sign In</h2>
@@ -958,11 +973,23 @@ LOBBY_HTML = """
       render(await response.json());
     }
 
+    function activityAuthFailureText() {
+      const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
+      return `Discord Activity login is not available in this window.${detail} Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
+    }
+
     async function startDiscordActivityAuth(clientId) {
-      if (!clientId || activityAuthRunning) return;
+      if (activityAuthRunning) return;
       activityAuthAttempted = true;
+      if (!clientId) {
+        activityAuthFailed = true;
+        activityAuthError = 'DISCORD_CLIENT_ID is missing on the server.';
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: '' });
+        return;
+      }
       activityAuthRunning = true;
       activityAuthFailed = false;
+      activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
         const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
@@ -982,6 +1009,7 @@ LOBBY_HTML = """
       } catch (error) {
         activityAuthRunning = false;
         activityAuthFailed = true;
+        activityAuthError = error && error.message ? error.message : String(error);
         renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       }
     }
