@@ -87,43 +87,6 @@ HTML = """
       height: 100dvh;
       overflow: hidden;
     }
-    header {
-      position: absolute;
-      z-index: 5;
-      top: max(12px, env(safe-area-inset-top));
-      left: max(14px, env(safe-area-inset-left));
-      right: max(14px, env(safe-area-inset-right));
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 10px 14px;
-      background: rgba(7, 13, 19, .84);
-      border: 1px solid rgba(143, 169, 188, .28);
-      border-radius: 8px;
-      box-shadow: 0 18px 40px rgba(0, 0, 0, .28);
-      backdrop-filter: blur(10px);
-      pointer-events: auto;
-    }
-    h1 {
-      margin: 0;
-      font-size: 20px;
-      letter-spacing: 0;
-    }
-    .meta {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 14px;
-      white-space: nowrap;
-    }
-    .pill {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 7px 10px;
-      background: rgba(17, 27, 38, .8);
-    }
     main {
       width: 100%;
       height: 100%;
@@ -164,12 +127,12 @@ HTML = """
       backdrop-filter: blur(10px);
     }
     .auth-window {
-      top: 76px;
+      top: 14px;
       left: max(14px, env(safe-area-inset-left));
       width: min(312px, calc(100vw - 28px));
     }
     .info-window {
-      top: 76px;
+      top: 14px;
       right: max(14px, env(safe-area-inset-right));
       width: min(330px, calc(100vw - 28px));
       max-height: min(58vh, 520px);
@@ -259,11 +222,27 @@ HTML = """
       font-size: 13px;
     }
     .panel-title {
-      margin: 0 0 10px;
+      margin: -2px 0 10px;
       color: var(--gold);
       font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
+      user-select: none;
+    }
+    .drag-handle {
+      cursor: move;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .drag-handle::after {
+      content: "drag";
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 400;
+      text-transform: none;
     }
     .seat-list {
       display: grid;
@@ -298,19 +277,13 @@ HTML = """
         max-height: 100vh;
         max-height: 100dvh;
       }
-      header {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .meta { flex-wrap: wrap; white-space: normal; }
       .auth-window, .info-window, .dealer-window, .action-window {
         left: 12px;
         right: 12px;
         width: auto;
         transform: none;
       }
-      .auth-window { top: 116px; }
+      .auth-window { top: 12px; }
       .info-window {
         top: auto;
         bottom: 326px;
@@ -336,29 +309,19 @@ HTML = """
       <section class="stage">
         <img id="tableImage" alt="Poker table">
         <div class="table-overlay">
-          <header>
-            <h1 id="title">Texas Hold'em Table</h1>
-            <div class="meta">
-              <span class="pill" id="phase">Loading</span>
-              <span class="pill" id="pot">Pot -</span>
-              <span class="pill" id="viewer">Not signed in</span>
-              <span class="pill" id="updated">Connecting</span>
-            </div>
-          </header>
+          <div class="float-window auth-window controls draggable-window" id="authPanel" data-window-id="auth"></div>
 
-          <div class="float-window auth-window controls" id="authPanel"></div>
-
-          <div class="float-window info-window">
-            <h2 class="panel-title">Table Window</h2>
+          <div class="float-window info-window draggable-window" data-window-id="info">
+            <h2 class="panel-title drag-handle" data-drag-handle>Table Window</h2>
             <div id="facts"></div>
-            <h2 class="panel-title" style="margin-top:12px">Seats</h2>
+            <h2 class="panel-title drag-handle" style="margin-top:12px" data-drag-handle>Seats</h2>
             <div id="seats" class="seat-list"></div>
-            <h2 class="panel-title" style="margin-top:12px">Last Result</h2>
+            <h2 class="panel-title drag-handle" style="margin-top:12px" data-drag-handle>Last Result</h2>
             <div id="result" class="row">-</div>
           </div>
 
-          <div class="float-window dealer-window controls" id="tableControls">
-            <h2 class="panel-title">Table Actions</h2>
+          <div class="float-window dealer-window controls draggable-window" id="tableControls" data-window-id="tableActions">
+            <h2 class="panel-title drag-handle" data-drag-handle>Table Actions</h2>
             <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
             <div class="grid2">
               <input id="seatNumber" type="number" min="1" placeholder="Seat">
@@ -377,7 +340,8 @@ HTML = """
             <div id="message" class="message"></div>
           </div>
 
-          <div class="float-window action-window controls" id="playerControls">
+          <div class="float-window action-window controls draggable-window" id="playerControls" data-window-id="playerActions">
+            <h2 class="panel-title drag-handle" data-drag-handle>Player Actions</h2>
             <div class="row"><span>Your cards</span><strong id="yourCards">-</strong></div>
             <div class="row"><span>Status</span><strong id="yourStatus">Waiting</strong></div>
             <div id="actionButtons" class="controls"></div>
@@ -392,14 +356,9 @@ HTML = """
     const parts = window.location.pathname.split('/').filter(Boolean);
     const tableId = parts[1];
     const image = document.getElementById('tableImage');
-    const phase = document.getElementById('phase');
-    const pot = document.getElementById('pot');
-    const viewer = document.getElementById('viewer');
-    const updated = document.getElementById('updated');
     const facts = document.getElementById('facts');
     const seats = document.getElementById('seats');
     const result = document.getElementById('result');
-    const title = document.getElementById('title');
     const actor = document.getElementById('actor');
     const cardPlayer = document.getElementById('cardPlayer');
     const message = document.getElementById('message');
@@ -412,6 +371,103 @@ HTML = """
     let activityAuthAttempted = false;
     let activityAuthRunning = false;
     let activityAuthFailed = false;
+
+    const tableFactObjects = [
+      { label: 'Game', value: data => `${data.mode.toUpperCase()} Texas Hold'em` },
+      { label: 'Phase', value: data => data.phase },
+      { label: 'Pot', value: data => data.pot },
+      { label: 'Signed in', value: data => data.authenticated ? data.viewer_name : 'Not signed in' },
+      { label: 'Blinds', value: data => `${data.small_blind}/${data.big_blind}` },
+      { label: 'Current bet', value: data => data.highest_bet },
+      { label: 'Board', value: data => data.board.length ? data.board.join(' ') : '-' },
+      { label: 'Turn', value: data => data.current_player_name || '-' },
+      { label: 'Timeout', value: data => data.seconds_until_timeout === null ? '-' : `${data.seconds_until_timeout}s` },
+    ];
+
+    const seatInfoObjects = [
+      { className: 'seat-title', value: player => `Seat ${player.seat}: ${player.name}` },
+      { value: player => `${player.chips} chips - bet ${player.bet} - committed ${player.committed}` },
+      { value: player => `${player.roles.length ? player.roles.join(' / ') + ' - ' : ''}${player.folded ? 'folded' : player.all_in ? 'all-in' : 'active'}` },
+      { value: player => `Cards: ${player.hole_cards.length ? player.hole_cards.join(' ') : player.offline_cards.length ? player.offline_cards.join(' ') : '-'}` },
+    ];
+
+    const actionObjects = {
+      fold: { label: 'Fold', className: 'danger' },
+      call: { label: 'Call', className: 'primary' },
+      check: { label: 'Check', className: 'primary' },
+      raise_to: { label: 'Raise To', className: '' },
+      all_in: { label: 'All In', className: 'danger' },
+    };
+
+    function setupDraggableWindows() {
+      for (const windowElement of document.querySelectorAll('.draggable-window')) {
+        const saved = loadWindowPosition(windowElement.dataset.windowId);
+        if (saved) applyWindowPosition(windowElement, saved);
+        windowElement.addEventListener('pointerdown', startWindowDrag);
+      }
+    }
+
+    function loadWindowPosition(windowId) {
+      if (!windowId) return null;
+      try {
+        const value = localStorage.getItem(`poker-window-${tableId}-${windowId}`);
+        return value ? JSON.parse(value) : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function saveWindowPosition(windowElement) {
+      const windowId = windowElement.dataset.windowId;
+      if (!windowId) return;
+      try {
+        localStorage.setItem(`poker-window-${tableId}-${windowId}`, JSON.stringify({
+          left: windowElement.offsetLeft,
+          top: windowElement.offsetTop,
+        }));
+      } catch (error) {}
+    }
+
+    function applyWindowPosition(windowElement, position) {
+      windowElement.style.left = `${position.left}px`;
+      windowElement.style.top = `${position.top}px`;
+      windowElement.style.right = 'auto';
+      windowElement.style.bottom = 'auto';
+      windowElement.style.transform = 'none';
+    }
+
+    function startWindowDrag(event) {
+      if (!event.target.closest('[data-drag-handle]')) return;
+      const windowElement = event.currentTarget;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const rect = windowElement.getBoundingClientRect();
+      const overlayRect = document.querySelector('.table-overlay').getBoundingClientRect();
+      if (windowElement.setPointerCapture) windowElement.setPointerCapture(event.pointerId);
+      windowElement.style.right = 'auto';
+      windowElement.style.bottom = 'auto';
+      windowElement.style.transform = 'none';
+
+      function move(pointerEvent) {
+        const nextLeft = rect.left - overlayRect.left + pointerEvent.clientX - startX;
+        const nextTop = rect.top - overlayRect.top + pointerEvent.clientY - startY;
+        const maxLeft = Math.max(0, overlayRect.width - rect.width);
+        const maxTop = Math.max(0, overlayRect.height - rect.height);
+        windowElement.style.left = `${Math.min(Math.max(0, nextLeft), maxLeft)}px`;
+        windowElement.style.top = `${Math.min(Math.max(0, nextTop), maxTop)}px`;
+      }
+
+      function finish() {
+        saveWindowPosition(windowElement);
+        windowElement.removeEventListener('pointermove', move);
+        windowElement.removeEventListener('pointerup', finish);
+        windowElement.removeEventListener('pointercancel', finish);
+      }
+
+      windowElement.addEventListener('pointermove', move);
+      windowElement.addEventListener('pointerup', finish);
+      windowElement.addEventListener('pointercancel', finish);
+    }
 
     authPanel.addEventListener('click', event => {
       const target = event.target.closest('[data-auth-action]');
@@ -442,28 +498,10 @@ HTML = """
 
     function render(data) {
       latest = data;
-      title.textContent = `${data.mode.toUpperCase()} Texas Hold'em`;
-      phase.textContent = `Phase ${data.phase}`;
-      pot.textContent = `Pot ${data.pot}`;
-      viewer.textContent = data.authenticated ? `${data.viewer_name}` : 'Not signed in';
-      updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
       image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
       renderAuthPanel(data);
-      facts.innerHTML = `
-        <div class="row"><span>Blinds</span><strong>${data.small_blind}/${data.big_blind}</strong></div>
-        <div class="row"><span>Current bet</span><strong>${data.highest_bet}</strong></div>
-        <div class="row"><span>Board</span><strong>${data.board.length ? data.board.join(' ') : '-'}</strong></div>
-        <div class="row"><span>Turn</span><strong class="turn">${html(data.current_player_name)}</strong></div>
-        <div class="row"><span>Timeout</span><strong>${data.seconds_until_timeout === null ? '-' : data.seconds_until_timeout + 's'}</strong></div>
-      `;
-      seats.innerHTML = data.players.map(player => `
-        <div class="seat">
-          <strong>Seat ${player.seat}: ${html(player.name)}</strong>
-          <span>${player.chips} chips - bet ${player.bet} - committed ${player.committed}</span>
-          <span>${player.roles.length ? player.roles.join(' / ') + ' - ' : ''}${player.folded ? 'folded' : player.all_in ? 'all-in' : 'active'}</span>
-          <span>Cards: ${player.hole_cards.length ? player.hole_cards.join(' ') : player.offline_cards.length ? player.offline_cards.join(' ') : '-'}</span>
-        </div>
-      `).join('') || '<div class="row">No players seated</div>';
+      renderFacts(data);
+      renderSeats(data.players);
       result.textContent = data.last_result || '-';
       const canControl = data.authenticated && data.viewer_is_seated;
       const showTableControls = canControl && (!data.hand_running || data.mode === 'offline');
@@ -478,6 +516,23 @@ HTML = """
       }
     }
 
+    function renderFacts(data) {
+      facts.innerHTML = tableFactObjects.map(field => `
+        <div class="row"><span>${html(field.label)}</span><strong>${html(field.value(data))}</strong></div>
+      `).join('');
+    }
+
+    function renderSeats(players) {
+      seats.innerHTML = players.map(player => `
+        <div class="seat">
+          ${seatInfoObjects.map((field, index) => {
+            const content = html(field.value(player));
+            return index === 0 ? `<strong>${content}</strong>` : `<span>${content}</span>`;
+          }).join('')}
+        </div>
+      `).join('') || '<div class="row">No players seated</div>';
+    }
+
     function renderAuthPanel(data) {
       if (!data.authenticated) {
         const status = activityAuthRunning
@@ -486,6 +541,7 @@ HTML = """
             ? '<div class="message">Discord authorization did not start. Use the Open Poker App button in Discord, not the browser backup link.</div>'
             : '<div class="message">Authorizing with Discord automatically...</div>';
         authPanel.innerHTML = `
+          <h2 class="panel-title drag-handle" data-drag-handle>Login</h2>
           ${status}
           <button class="primary" data-auth-action="retry" data-client-id="${html(data.activity_client_id || '')}">Retry Discord Authorization</button>
           <a class="button secondary" href="/">Back to Lobby</a>
@@ -496,6 +552,7 @@ HTML = """
       }
       if (!data.viewer_is_seated) {
         authPanel.innerHTML = `
+          <h2 class="panel-title drag-handle" data-drag-handle>Seat</h2>
           <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
           <button class="primary" data-auth-action="join">Join This Table</button>
           <a class="button secondary" href="/">Back to Lobby</a>
@@ -505,6 +562,7 @@ HTML = """
         return;
       }
       authPanel.innerHTML = `
+        <h2 class="panel-title drag-handle" data-drag-handle>Seat</h2>
         <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
         <a class="button secondary" href="/">Back to Lobby</a>
         ${data.hand_running ? '' : '<button data-auth-action="leave">Leave Table</button>'}
@@ -543,10 +601,10 @@ HTML = """
       }
       document.getElementById('yourStatus').textContent = `Your turn - to call ${data.highest_bet - (me ? me.bet : 0)}`;
       for (const action of data.viewer_legal_actions) {
+        const definition = actionObjects[action] || { label: action.replace('_', '-'), className: '' };
         const button = document.createElement('button');
-        button.textContent = action === 'raise_to' ? 'Raise To' : action.replace('_', '-');
-        if (action === 'fold') button.className = 'danger';
-        if (action === 'call' || action === 'check') button.className = 'primary';
+        button.textContent = definition.label;
+        if (definition.className) button.className = definition.className;
         button.onclick = () => postPlayerAction(action);
         actionButtons.appendChild(button);
       }
@@ -633,7 +691,6 @@ HTML = """
         if (!response.ok) throw new Error(await response.text());
         render(await response.json());
       } catch (error) {
-        updated.textContent = 'Disconnected';
         result.textContent = error.message;
       }
     }
@@ -692,6 +749,7 @@ HTML = """
       throw lastError || new Error('Discord token exchange failed');
     }
 
+    setupDraggableWindows();
     refresh();
     setInterval(refresh, 1500);
   </script>

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 import math
+from typing import Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -39,14 +41,80 @@ FONT_SMALL = _font(16)
 FONT_TINY = _font(13)
 
 
+class RenderObject(Protocol):
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        ...
+
+
+@dataclass(frozen=True)
+class TableSurfaceObject:
+    table: PokerTable
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        _draw_table(draw, self.table)
+
+
+@dataclass(frozen=True)
+class BoardObject:
+    table: PokerTable
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        _draw_board(draw, self.table)
+
+
+@dataclass(frozen=True)
+class PlayerSeatObject:
+    table: PokerTable
+    player: PlayerState
+    seat_index: int
+    total_seats: int
+    roles: list[str]
+    viewer_id: int | None
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        cx, cy = _seat_position(self.seat_index, max(self.total_seats, 2))
+        _draw_seat(draw, self.table, self.player, self.seat_index, cx, cy, self.roles, self.viewer_id)
+
+
+@dataclass(frozen=True)
+class CardObject:
+    card: Card
+    x: int
+    y: int
+    scale: float = 1.0
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        _draw_card(draw, self.x, self.y, self.card, self.scale)
+
+
+@dataclass(frozen=True)
+class TextObject:
+    position: tuple[int, int]
+    text: str
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    fill: tuple[int, int, int]
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        draw.text(self.position, self.text, font=self.font, fill=self.fill)
+
+
+@dataclass(frozen=True)
+class CenteredTextObject:
+    center: tuple[int, int]
+    text: str
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont
+    fill: tuple[int, int, int]
+
+    def draw(self, draw: ImageDraw.ImageDraw) -> None:
+        _draw_text_center(draw, self.center, self.text, self.font, self.fill)
+
+
 def render_table(table: PokerTable, viewer_id: int | None = None) -> BytesIO:
     image = Image.new("RGB", (WIDTH, HEIGHT), (18, 25, 34))
     draw = ImageDraw.Draw(image)
     _draw_background(draw)
-    _draw_table(draw, table)
-    _draw_board(draw, table)
-    _draw_players(draw, table, viewer_id)
-    _draw_status_panel(draw, table)
+    for render_object in _table_scene_objects(table, viewer_id):
+        render_object.draw(draw)
 
     buffer = BytesIO()
     image.save(buffer, format="PNG")
@@ -61,11 +129,32 @@ def render_private_hand(cards: list[Card]) -> BytesIO:
     _draw_text_center(draw, (160, 42), "Your hand", FONT_MEDIUM, (236, 241, 245))
     start_x = 80
     for index, card in enumerate(cards):
-        _draw_card(draw, start_x + index * 86, 64, card)
+        CardObject(card, start_x + index * 86, 64).draw(draw)
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+
+
+def _table_scene_objects(table: PokerTable, viewer_id: int | None) -> list[RenderObject]:
+    objects: list[RenderObject] = [
+        TableSurfaceObject(table),
+        BoardObject(table),
+    ]
+    roles = table.seat_roles()
+    players = table.seat_order()
+    objects.extend(
+        PlayerSeatObject(
+            table=table,
+            player=player,
+            seat_index=index,
+            total_seats=len(players),
+            roles=roles.get(player.user_id, []),
+            viewer_id=viewer_id,
+        )
+        for index, player in enumerate(players)
+    )
+    return objects
 
 
 def _draw_background(draw: ImageDraw.ImageDraw) -> None:
@@ -84,8 +173,8 @@ def _draw_table(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
     inner = (TABLE_BOX[0] + 42, TABLE_BOX[1] + 42, TABLE_BOX[2] - 42, TABLE_BOX[3] - 42)
     draw.ellipse(inner, fill=(20, 120, 78), outline=(38, 148, 98), width=4)
     draw.ellipse((430, 260, 770, 500), fill=(18, 103, 70), outline=(64, 153, 104), width=3)
-    _draw_text_center(draw, (600, 300), "TEXAS HOLD'EM", FONT_TITLE, (220, 205, 151))
-    _draw_text_center(draw, (600, 335), f"{table.small_blind}/{table.big_blind} blinds", FONT_SMALL, (188, 213, 199))
+    CenteredTextObject((600, 300), "TEXAS HOLD'EM", FONT_TITLE, (220, 205, 151)).draw(draw)
+    CenteredTextObject((600, 335), f"{table.small_blind}/{table.big_blind} blinds", FONT_SMALL, (188, 213, 199)).draw(draw)
 
 
 def _draw_board(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
@@ -99,15 +188,7 @@ def _draw_board(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
             _draw_empty_card(draw, x, y)
     pot = sum(player.committed for player in table.players.values())
     draw.rounded_rectangle((500, 486, 700, 530), radius=18, fill=(16, 65, 49), outline=(94, 179, 125), width=2)
-    _draw_text_center(draw, (600, 508), f"Pot {pot}", FONT_LARGE, (246, 231, 166))
-
-
-def _draw_players(draw: ImageDraw.ImageDraw, table: PokerTable, viewer_id: int | None) -> None:
-    players = table.seat_order()
-    roles = table.seat_roles()
-    for index, player in enumerate(players):
-        cx, cy = _seat_position(index, max(len(players), 2))
-        _draw_seat(draw, table, player, index, cx, cy, roles.get(player.user_id, []), viewer_id)
+    CenteredTextObject((600, 508), f"Pot {pot}", FONT_LARGE, (246, 231, 166)).draw(draw)
 
 
 def _draw_seat(
@@ -136,14 +217,14 @@ def _draw_seat(
     draw.rounded_rectangle(panel, radius=18, fill=seat_color, outline=outline, width=3)
 
     draw.ellipse((panel[0] + 12, panel[1] + 15, panel[0] + 58, panel[1] + 61), fill=(26, 33, 42), outline=(117, 135, 151), width=2)
-    _draw_text_center(draw, (panel[0] + 35, panel[1] + 38), str(seat_index + 1), FONT_SMALL, (229, 236, 242))
+    CenteredTextObject((panel[0] + 35, panel[1] + 38), str(seat_index + 1), FONT_SMALL, (229, 236, 242)).draw(draw)
 
     name = _fit_text(player.name, 15)
-    draw.text((panel[0] + 70, panel[1] + 14), name, fill=(238, 243, 247), font=FONT_MEDIUM)
-    draw.text((panel[0] + 70, panel[1] + 41), f"{player.chips} chips", fill=(192, 207, 218), font=FONT_SMALL)
+    TextObject((panel[0] + 70, panel[1] + 14), name, FONT_MEDIUM, (238, 243, 247)).draw(draw)
+    TextObject((panel[0] + 70, panel[1] + 41), f"{player.chips} chips", FONT_SMALL, (192, 207, 218)).draw(draw)
 
     status = _player_status(player, roles)
-    draw.text((panel[0] + 14, panel[3] - 24), status, fill=(241, 214, 131), font=FONT_TINY)
+    TextObject((panel[0] + 14, panel[3] - 24), status, FONT_TINY, (241, 214, 131)).draw(draw)
     if player.bet > 0:
         _draw_chip_stack(draw, cx - 18, cy + 62, player.bet)
 
@@ -188,23 +269,6 @@ def _seat_position(index: int, total: int) -> tuple[int, int]:
     ry = 285
     angle = -math.pi / 2 + (2 * math.pi * index / total)
     return int(cx + rx * math.cos(angle)), int(cy + ry * math.sin(angle))
-
-
-def _draw_status_panel(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
-    draw.rounded_rectangle((22, 22, 354, 136), radius=18, fill=(24, 33, 43), outline=(72, 91, 108), width=2)
-    draw.text((42, 38), f"{table.mode.upper()} TABLE", font=FONT_MEDIUM, fill=(240, 245, 248))
-    draw.text((42, 66), f"Phase: {table.phase.value}", font=FONT_SMALL, fill=(195, 210, 221))
-    current = table.players.get(table.current_user_id) if table.current_user_id else None
-    turn = current.name if current else "-"
-    call = table.amount_to_call(current.user_id) if current else 0
-    draw.text((42, 91), f"Turn: {_fit_text(turn, 22)}", font=FONT_SMALL, fill=(239, 197, 87))
-    draw.text((42, 113), f"To call: {call}", font=FONT_SMALL, fill=(195, 210, 221))
-
-    if table.last_result:
-        draw.rounded_rectangle((846, 22, 1178, 136), radius=18, fill=(24, 33, 43), outline=(72, 91, 108), width=2)
-        lines = _wrap(table.last_result.replace("\n", " | "), 36)[:4]
-        for index, line in enumerate(lines):
-            draw.text((866, 38 + index * 22), line, font=FONT_TINY, fill=(226, 235, 240))
 
 
 def _draw_card(draw: ImageDraw.ImageDraw, x: int, y: int, card: Card, scale: float = 1.0) -> None:
@@ -258,19 +322,3 @@ def _fit_text(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max(0, max_chars - 1)] + "."
-
-
-def _wrap(text: str, max_chars: int) -> list[str]:
-    words = text.split()
-    lines: list[str] = []
-    current = ""
-    for word in words:
-        next_line = f"{current} {word}".strip()
-        if len(next_line) > max_chars and current:
-            lines.append(current)
-            current = word
-        else:
-            current = next_line
-    if current:
-        lines.append(current)
-    return lines
