@@ -62,6 +62,7 @@ class SeatingView(discord.ui.View):
     @discord.ui.button(label="Open Poker App", style=discord.ButtonStyle.primary)
     async def launch(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         try:
+            self.runtime.web_server.set_launch_target(interaction.user.id, self.table.channel_id)
             await interaction.response.launch_activity()
         except Exception as exc:
             await send_error(interaction, exc)
@@ -133,6 +134,19 @@ class PokerCog(commands.Cog):
     @app_commands.command(name="poker_launch", description="Launch the embedded poker app in Discord.")
     async def poker_launch(self, interaction: discord.Interaction) -> None:
         try:
+            latest_table_id = self.runtime.registry.latest_table_id()
+            if latest_table_id is not None:
+                self.runtime.web_server.set_launch_target(interaction.user.id, latest_table_id)
+            await interaction.response.launch_activity()
+        except Exception as exc:
+            await send_error(interaction, exc)
+
+    @app_commands.command(name="poker_open", description="Launch the embedded poker app at a table.")
+    @app_commands.describe(table_id="Table ID shown in the create message")
+    async def poker_open(self, interaction: discord.Interaction, table_id: str) -> None:
+        try:
+            table = self.runtime.registry.get_by_public_id(table_id)
+            self.runtime.web_server.set_launch_target(interaction.user.id, table.channel_id)
             await interaction.response.launch_activity()
         except Exception as exc:
             await send_error(interaction, exc)

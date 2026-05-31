@@ -29,7 +29,27 @@ class TableRegistry:
         return self.get(table_id)
 
     def tables(self) -> list[PokerTable]:
+        self.prune_empty_tables()
         return list(self._tables.values())
+
+    def prune_empty_tables(self, max_empty_seconds: int = 600) -> list[int]:
+        now = time.time()
+        removed: list[int] = []
+        for table_id, table in list(self._tables.items()):
+            if table.players or table.hand_running:
+                continue
+            empty_since = table.empty_since or table.created_at
+            if now - empty_since < max_empty_seconds:
+                continue
+            removed.append(table_id)
+            del self._tables[table_id]
+        return removed
+
+    def latest_table_id(self) -> int | None:
+        self.prune_empty_tables()
+        if not self._tables:
+            return None
+        return max(self._tables)
 
     async def create_table(
         self,

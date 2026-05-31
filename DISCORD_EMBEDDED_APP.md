@@ -14,6 +14,7 @@
 - `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image` 根据服务端 session 只显示当前玩家自己的手牌。
 - `/api/tables/<table_id>/me/join` 和 `/api/tables/<table_id>/me/leave` 负责网站内入座/离座。
 - `/poker_launch` 调用 Discord 的 `launch_activity` response，用于启动内嵌 Activity。
+- `/poker_open table_id` 会先记录目标桌，再启动 Activity；如果手机端按钮打不开，用这个命令进入指定桌。
 
 ## Developer Portal
 
@@ -47,7 +48,7 @@ POKER_PUBLIC_BASE_URL=https://你的域名
 2. 打开 `https://你的域名/healthz`，确认返回 `ok: true`。
 3. Discord 中执行 `/poker_online_create`。
 4. 玩家点击牌桌消息里的 `Open Poker App`，或执行 `/poker_launch` 启动内嵌 App。
-5. Activity lobby 自动登录 Discord 并显示 live tables。
+5. 从牌桌消息启动会直接进入那张桌；从 `/poker_launch` 启动会进入最近的 live table 或 lobby。
 6. 玩家打开牌桌，在网站内点击 `Join This Table` 入座。
 7. 入座后开始牌局，只有当前登录玩家能看到自己的手牌和合法动作。
 

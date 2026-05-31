@@ -173,6 +173,7 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - Discord slash commands 已同步。
 - `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Poker App` Activity 按钮。
 - `/poker_launch` 在启用 Activities 后能启动 Discord 内嵌 App。
+- `/poker_open table_id` 能在手机端作为指定牌桌入口。
 - Discord 内没有 `Call` / `Raise` / `Fold` / `Start Hand` 流程按钮。
 - 外部页面能打开并自动刷新。
 - 入座玩家登录 Discord 后只能看到自己的手牌。
@@ -204,6 +205,7 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 
 - 登录 session 是签名 cookie；如果更换 `POKER_SESSION_SECRET`、`DISCORD_CLIENT_SECRET` 或 bot token，旧 session 会失效。
 - live table 不是持久化状态。
+- 空桌自动清理依赖请求触发，完全无人访问时会在下一次 API/页面请求时清理。
 - 当前不支持多实例。
 
 这些限制都可以扩展，但需要先设计 Redis/Postgres 状态层、session 持久化和事件一致性。

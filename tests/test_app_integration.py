@@ -50,6 +50,25 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(first.channel_id, second.channel_id)
         self.assertEqual(len(registry.tables()), 2)
 
+    async def test_empty_tables_are_pruned_after_ttl(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        table = await registry.create_table(123, "online", 10, 20, 1000)
+        table.empty_since -= 601
+
+        removed = registry.prune_empty_tables(max_empty_seconds=600)
+
+        self.assertEqual(removed, [table.channel_id])
+        self.assertEqual(registry.tables(), [])
+
+    async def test_recent_empty_tables_are_not_pruned(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        table = await registry.create_table(123, "online", 10, 20, 1000)
+
+        removed = registry.prune_empty_tables(max_empty_seconds=600)
+
+        self.assertEqual(removed, [])
+        self.assertEqual(registry.tables(), [table])
+
     async def test_web_play_flow_can_start_and_act(self):
         registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
         table = await registry.create_table(123, "online", 10, 20, 1000)

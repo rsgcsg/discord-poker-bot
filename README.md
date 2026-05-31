@@ -70,6 +70,7 @@ http://127.0.0.1:8765/healthz
 
 - `/poker_online_create small_blind big_blind starting_chips`
 - 点击牌桌消息里的 `Open Poker App`，或使用 `/poker_launch` 打开内嵌 App
+- 手机端如果按钮打不开，可以用 `/poker_open table_id`
 - 在网站里点击 `Join This Table` 入座，然后开局、看自己的手牌、下注
 - `/poker_link` 获取外部牌桌链接
 
@@ -77,12 +78,14 @@ http://127.0.0.1:8765/healthz
 
 - `/poker_offline_create small_blind big_blind starting_chips`
 - 点击牌桌消息里的 `Open Poker App`，或使用 `/poker_launch` 打开内嵌 App
+- 手机端如果按钮打不开，可以用 `/poker_open table_id`
 - 在网站上入座、调整座位、开始游戏、记录下注、录入公共牌/玩家手牌、摊牌或手动发奖
 
 统计和状态：
 
 - `/poker_link`
 - `/poker_launch`
+- `/poker_open`
 - `/poker_tables`
 - `/poker_stats`
 
@@ -143,4 +146,5 @@ https://你的域名/oauth/callback
 - 统计保存在 SQLite；云上需要持久化磁盘。
 - 未登录或未入座用户不能看手牌、不能操作。
 - 登录 session 使用签名 cookie；设置 `POKER_SESSION_SECRET` 后 redeploy 不会强制重新登录。
+- 空桌超过 10 分钟会自动取消。
 - 建议生产环境只运行一个实例；多实例需要 Redis/Postgres 等共享状态。

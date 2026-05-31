@@ -81,16 +81,21 @@ class PokerTable:
     last_action_at: float = field(default_factory=time.time)
     hand_timeout_seconds: int = 900
     game_over: bool = False
+    created_at: float = field(default_factory=time.time)
+    empty_since: float = field(default_factory=time.time)
 
     def add_player(self, user_id: int, name: str) -> str:
         if self.hand_running:
             raise ValueError("A hand is already running.")
         if user_id in self.players:
             self.players[user_id].name = name
+            self.last_action_at = time.time()
             return f"{name} is already seated."
         if len(self.players) >= self.max_seats:
             raise ValueError(f"This table is full. Maximum seats: {self.max_seats}.")
         self.players[user_id] = PlayerState(user_id, name, self.starting_chips)
+        self.last_action_at = time.time()
+        self.empty_since = 0
         return f"{name} joined with {self.starting_chips} chips."
 
     def remove_player(self, user_id: int) -> str:
@@ -100,6 +105,9 @@ class PokerTable:
         if player is None:
             raise ValueError("You are not seated.")
         self.dealer_index %= max(1, len(self.players))
+        self.last_action_at = time.time()
+        if not self.players:
+            self.empty_since = time.time()
         return f"{player.name} left the table."
 
     def seat_order(self) -> list[PlayerState]:
@@ -513,6 +521,8 @@ class PokerTable:
             "highest_bet": self.highest_bet,
             "last_action_at": self.last_action_at,
             "hand_timeout_seconds": self.hand_timeout_seconds,
+            "created_at": self.created_at,
+            "empty_since": self.empty_since,
             "can_start_next_hand": self.can_start_next_hand(),
             "game_over": self.game_over,
             "players": [

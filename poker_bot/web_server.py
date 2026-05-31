@@ -363,6 +363,7 @@ HTML = """
         authPanel.innerHTML = `
           ${status}
           <button class="primary" onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Retry Discord Authorization</button>
+          <a class="button secondary" href="/">Back to Lobby</a>
           <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Backup</a>
         `;
         return;
@@ -371,12 +372,14 @@ HTML = """
         authPanel.innerHTML = `
           <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
           <button class="primary" onclick="postJoin()">Join This Table</button>
+          <a class="button secondary" href="/">Back to Lobby</a>
           <a class="button secondary" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>
         `;
         return;
       }
       authPanel.innerHTML = `
         <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
+        <a class="button secondary" href="/">Back to Lobby</a>
         ${data.hand_running ? '' : '<button onclick="postLeave()">Leave Table</button>'}
       `;
     }
@@ -697,6 +700,10 @@ LOBBY_HTML = """
       latest = data;
       viewer.textContent = data.authenticated ? data.viewer_name : 'Not signed in';
       renderAuthPanel(data);
+      if (data.authenticated && data.launch_table_id) {
+        window.location.href = `/table/${data.launch_table_id}`;
+        return;
+      }
       tables.innerHTML = data.tables.map(table => `
         <div class="table">
           <div>
@@ -806,6 +813,7 @@ class PokerWebServer:
         self.config = config
         self.sessions: dict[str, dict[str, object]] = {}
         self.oauth_states: dict[str, str] = {}
+        self.launch_targets: dict[int, int] = {}
         self.discord_sdk_source: str | None = None
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
@@ -864,12 +872,18 @@ class PokerWebServer:
 
     async def lobby_api(self, request: web.Request) -> web.Response:
         user = self.current_user(request)
+        user_id = int(user["user_id"]) if user else None
+        launch_table_id = self.launch_targets.pop(user_id, None) if user_id is not None else None
+        tables = self.registry.tables()
+        if launch_table_id is not None and not any(table.channel_id == launch_table_id for table in tables):
+            launch_table_id = None
         return web.json_response(
             {
                 "authenticated": user is not None,
                 "viewer_name": user["username"] if user else None,
                 "activity_client_id": self.config.discord_client_id,
-                "tables": [table.snapshot() for table in self.registry.tables()],
+                "launch_table_id": launch_table_id,
+                "tables": [table.snapshot() for table in tables],
             }
         )
 
@@ -1176,6 +1190,9 @@ class PokerWebServer:
             samesite="None" if is_https else "Lax",
             max_age=60 * 60 * 24 * 14,
         )
+
+    def set_launch_target(self, user_id: int, table_id: int) -> None:
+        self.launch_targets[user_id] = table_id
 
 
 def table_url(config: AppConfig, table: object) -> str:
