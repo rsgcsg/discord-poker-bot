@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+poker_stats.sqlite3
+*.sqlite3

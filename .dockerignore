@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.sqlite3
+poker_stats.sqlite3
+.git/
+.DS_Store
