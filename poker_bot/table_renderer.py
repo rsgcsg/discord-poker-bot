@@ -39,13 +39,13 @@ FONT_SMALL = _font(16)
 FONT_TINY = _font(13)
 
 
-def render_table(table: PokerTable) -> BytesIO:
+def render_table(table: PokerTable, viewer_id: int | None = None) -> BytesIO:
     image = Image.new("RGB", (WIDTH, HEIGHT), (18, 25, 34))
     draw = ImageDraw.Draw(image)
     _draw_background(draw)
     _draw_table(draw, table)
     _draw_board(draw, table)
-    _draw_players(draw, table)
+    _draw_players(draw, table, viewer_id)
     _draw_status_panel(draw, table)
 
     buffer = BytesIO()
@@ -102,12 +102,12 @@ def _draw_board(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
     _draw_text_center(draw, (600, 508), f"Pot {pot}", FONT_LARGE, (246, 231, 166))
 
 
-def _draw_players(draw: ImageDraw.ImageDraw, table: PokerTable) -> None:
+def _draw_players(draw: ImageDraw.ImageDraw, table: PokerTable, viewer_id: int | None) -> None:
     players = table.seat_order()
     roles = table.seat_roles()
     for index, player in enumerate(players):
         cx, cy = _seat_position(index, max(len(players), 2))
-        _draw_seat(draw, table, player, index, cx, cy, roles.get(player.user_id, []))
+        _draw_seat(draw, table, player, index, cx, cy, roles.get(player.user_id, []), viewer_id)
 
 
 def _draw_seat(
@@ -118,6 +118,7 @@ def _draw_seat(
     cx: int,
     cy: int,
     roles: list[str],
+    viewer_id: int | None,
 ) -> None:
     active = player.user_id == table.current_user_id
     folded = player.folded
@@ -146,7 +147,7 @@ def _draw_seat(
     if player.bet > 0:
         _draw_chip_stack(draw, cx - 18, cy + 62, player.bet)
 
-    cards = _visible_cards(table, player)
+    cards = _visible_cards(table, player, viewer_id)
     if cards:
         card_x = cx - CARD_W - 4
         card_y = cy - 124 if cy > HEIGHT / 2 else cy + 62
@@ -157,10 +158,10 @@ def _draw_seat(
                 _draw_card(draw, card_x + index * 46, card_y, card, scale=0.76)
 
 
-def _visible_cards(table: PokerTable, player: PlayerState) -> list[Card | None]:
+def _visible_cards(table: PokerTable, player: PlayerState, viewer_id: int | None) -> list[Card | None]:
     if not table.hand_running and table.phase != Phase.FINISHED:
         return []
-    if len(player.hole) == 2:
+    if len(player.hole) == 2 and (viewer_id == player.user_id or table.phase == Phase.FINISHED):
         return player.hole
     if len(player.offline_cards) == 2 and table.phase == Phase.FINISHED:
         return player.offline_cards

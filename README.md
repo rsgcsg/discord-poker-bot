@@ -61,9 +61,9 @@ http://127.0.0.1:8765/healthz
 线上模式：
 
 - `/poker_online_create small_blind big_blind starting_chips`
-- 点击 `Join`
+- 点击 `Join`，bot 会用 ephemeral message 发给你一个私人玩家链接
 - 打开 `Open Table`
-- 在网站上调整座位、开始游戏和下注
+- 公共桌面用于开局和看桌况；私人玩家链接用于看自己的手牌和下注
 - `/poker_link` 获取外部牌桌链接
 
 线下模式：
@@ -93,6 +93,7 @@ http://127.0.0.1:8765/healthz
 bot 启动后会同时启动 web 服务：
 
 - 页面：`/table/<table_id>`
+- 玩家页面：`/table/<table_id>/player/<user_id>?token=<secret>`
 - 公开状态 API：`/api/tables/<table_id>`
 - 高清牌桌图：`/api/tables/<table_id>/image`
 - 健康检查：`/healthz`
@@ -125,6 +126,6 @@ http://127.0.0.1:8765
 
 - live table 仍保存在内存里，服务重启后需要重新开桌。
 - 统计保存在 SQLite；云上需要持久化磁盘。
-- 外部页面是公开控制台，当前没有登录认证；知道链接的人可以看到手牌并操作牌局。
-- 线上玩家手牌现在显示在网站牌桌中，不再通过 Discord 私信发送。
+- 公共桌面不显示手牌；私人玩家链接只显示该玩家自己的手牌。
+- 当前没有完整登录系统；如果玩家转发自己的私人链接，别人可以看到该玩家手牌并代操作。
 - 建议生产环境只运行一个实例；多实例需要 Redis/Postgres 等共享状态。

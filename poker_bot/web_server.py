@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from aiohttp import web
 
@@ -14,17 +15,38 @@ logger = logging.getLogger(__name__)
 
 
 def serialize_public_table(registry: TableRegistry, table_id: str) -> dict[str, object]:
+    return serialize_table(registry, table_id)
+
+
+def serialize_player_table(registry: TableRegistry, table_id: str, user_id: int, token: str) -> dict[str, object]:
     table = registry.get_by_public_id(table_id)
+    _require_player_token(table, user_id, token)
+    return serialize_table(registry, table_id, user_id)
+
+
+def serialize_table(registry: TableRegistry, table_id: str, viewer_id: int | None = None) -> dict[str, object]:
+    table = registry.get_by_public_id(table_id)
+    table.expire_if_needed()
     data = table.snapshot()
     current = table.players.get(table.current_user_id) if table.current_user_id else None
     roles = table.seat_roles()
     data["current_player_name"] = current.name if current else None
+    data["viewer_id"] = viewer_id
+    data["viewer_legal_actions"] = table.legal_actions_for(viewer_id) if viewer_id else []
+    data["seconds_until_timeout"] = max(0, int(table.hand_timeout_seconds - (time.time() - table.last_action_at))) if table.hand_running else None
     for player in data["players"]:
         player["roles"] = roles.get(player["user_id"], [])
         source = table.players[player["user_id"]]
-        player["hole_cards"] = [card.label() for card in source.hole]
+        can_view_hole = viewer_id == source.user_id or table.phase.value == "finished"
+        player["hole_cards"] = [card.label() for card in source.hole] if can_view_hole else []
         player["offline_cards"] = [card.label() for card in source.offline_cards]
     return data
+
+
+def _require_player_token(table: object, user_id: int, token: str) -> None:
+    player = table.players.get(user_id)
+    if player is None or not token or player.web_token != token:
+        raise ValueError("Invalid player link.")
 
 
 HTML = """
@@ -204,21 +226,8 @@ HTML = """
       </section>
       <aside>
         <h2>Controls</h2>
-        <div class="controls">
-          <button class="primary" onclick="postAction('start')">Start Hand</button>
-          <select id="actor"></select>
-          <div class="grid2">
-            <button onclick="postAction('check')">Check</button>
-            <button onclick="postAction('call')">Call</button>
-          </div>
-          <div class="grid2">
-            <button onclick="postAction('raise_to')">Raise To</button>
-            <input id="raiseAmount" type="number" min="1" placeholder="Raise total">
-          </div>
-          <div class="grid2">
-            <button onclick="postAction('all_in')">All-in</button>
-            <button class="danger" onclick="postAction('fold')">Fold</button>
-          </div>
+        <div class="controls" id="tableControls">
+          <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
           <div class="grid2">
             <select id="seatPlayer"></select>
             <input id="seatNumber" type="number" min="1" placeholder="Seat">
@@ -230,10 +239,18 @@ HTML = """
             <select id="cardPlayer"></select>
             <input id="holeCards" placeholder="Player cards: As Ad">
             <button onclick="postOfflineCards()">Set Player Cards</button>
-            <button onclick="postAction('showdown')">Showdown</button>
+            <select id="actor"></select>
+            <button onclick="postTableAction('showdown')">Showdown</button>
             <button onclick="postManualAward()">Manual Award To Selected Player</button>
           </div>
           <div id="message" class="message"></div>
+        </div>
+        <div class="controls" id="playerControls">
+          <div class="row"><span>Your cards</span><strong id="yourCards">-</strong></div>
+          <div class="row"><span>Status</span><strong id="yourStatus">Waiting</strong></div>
+          <div id="actionButtons" class="controls"></div>
+          <input id="raiseAmount" type="number" min="1" placeholder="Raise total">
+          <div id="playerMessage" class="message"></div>
         </div>
         <h2>Table</h2>
         <div id="facts"></div>
@@ -245,7 +262,11 @@ HTML = """
     </main>
   </div>
   <script>
-    const tableId = window.location.pathname.split('/').filter(Boolean).pop();
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const tableId = parts[1];
+    const playerId = parts[2] === 'player' ? Number(parts[3]) : null;
+    const token = new URLSearchParams(window.location.search).get('token') || '';
+    const isPlayerView = Boolean(playerId && token);
     const image = document.getElementById('tableImage');
     const phase = document.getElementById('phase');
     const pot = document.getElementById('pot');
@@ -258,6 +279,10 @@ HTML = """
     const seatPlayer = document.getElementById('seatPlayer');
     const cardPlayer = document.getElementById('cardPlayer');
     const message = document.getElementById('message');
+    const playerMessage = document.getElementById('playerMessage');
+    const actionButtons = document.getElementById('actionButtons');
+    const tableControls = document.getElementById('tableControls');
+    const playerControls = document.getElementById('playerControls');
     let latest = null;
 
     function text(value) {
@@ -270,12 +295,14 @@ HTML = """
       phase.textContent = `Phase ${data.phase}`;
       pot.textContent = `Pot ${data.pot}`;
       updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-      image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
+      const imageAuth = isPlayerView ? `&viewer_id=${playerId}&token=${encodeURIComponent(token)}` : '';
+      image.src = `/api/tables/${tableId}/image?v=${Date.now()}${imageAuth}`;
       facts.innerHTML = `
         <div class="row"><span>Blinds</span><strong>${data.small_blind}/${data.big_blind}</strong></div>
         <div class="row"><span>Current bet</span><strong>${data.highest_bet}</strong></div>
         <div class="row"><span>Board</span><strong>${data.board.length ? data.board.join(' ') : '-'}</strong></div>
         <div class="row"><span>Turn</span><strong class="turn">${text(data.current_player_name)}</strong></div>
+        <div class="row"><span>Timeout</span><strong>${data.seconds_until_timeout === null ? '-' : data.seconds_until_timeout + 's'}</strong></div>
       `;
       seats.innerHTML = data.players.map(player => `
         <div class="seat">
@@ -286,8 +313,12 @@ HTML = """
         </div>
       `).join('') || '<div class="row">No players seated</div>';
       result.textContent = data.last_result || '-';
-      document.getElementById('offlineControls').style.display = data.mode === 'offline' ? 'grid' : 'none';
+      tableControls.style.display = isPlayerView ? 'none' : 'grid';
+      playerControls.style.display = isPlayerView ? 'grid' : 'none';
+      document.getElementById('offlineControls').style.display = !isPlayerView && data.mode === 'offline' && data.hand_running ? 'grid' : 'none';
+      document.getElementById('startButton').style.display = !data.hand_running && data.can_start_next_hand ? 'block' : 'none';
       updatePlayerSelects(data);
+      updatePlayerControls(data);
     }
 
     function updatePlayerSelects(data) {
@@ -300,8 +331,33 @@ HTML = """
       if (data.current_user_id) actor.value = String(data.current_user_id);
     }
 
-    async function request(path, payload = {}) {
-      message.textContent = 'Working...';
+    function updatePlayerControls(data) {
+      actionButtons.innerHTML = '';
+      if (!isPlayerView) return;
+      const me = data.players.find(player => player.user_id === playerId);
+      document.getElementById('raiseAmount').style.display = data.viewer_legal_actions.includes('raise_to') ? 'block' : 'none';
+      document.getElementById('yourCards').textContent = me && me.hole_cards.length ? me.hole_cards.join(' ') : '-';
+      if (!data.hand_running) {
+        document.getElementById('yourStatus').textContent = data.game_over ? 'Game over' : 'Waiting for next hand';
+        return;
+      }
+      if (data.current_user_id !== playerId) {
+        document.getElementById('yourStatus').textContent = `Waiting for ${data.current_player_name || 'another player'}`;
+        return;
+      }
+      document.getElementById('yourStatus').textContent = `Your turn - to call ${data.highest_bet - (me ? me.bet : 0)}`;
+      for (const action of data.viewer_legal_actions) {
+        const button = document.createElement('button');
+        button.textContent = action === 'raise_to' ? 'Raise To' : action.replace('_', '-');
+        if (action === 'fold') button.className = 'danger';
+        if (action === 'call' || action === 'check') button.className = 'primary';
+        button.onclick = () => postPlayerAction(action);
+        actionButtons.appendChild(button);
+      }
+    }
+
+    async function request(path, payload = {}, targetMessage = message) {
+      targetMessage.textContent = 'Working...';
       const response = await fetch(`/api/tables/${tableId}/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -309,17 +365,28 @@ HTML = """
       });
       const data = await response.json();
       if (!response.ok) {
-        message.textContent = data.error || 'Request failed';
+        targetMessage.textContent = data.error || 'Request failed';
         return;
       }
-      message.textContent = data.message || 'Done';
+      targetMessage.textContent = data.message || 'Done';
       await refresh();
     }
 
-    async function postAction(action) {
-      const payload = { action, user_id: Number(actor.value) };
+    async function postTableAction(action) {
+      await request('action', { action });
+    }
+
+    async function postPlayerAction(action) {
+      const payload = { action, token };
       if (action === 'raise_to') payload.amount = Number(document.getElementById('raiseAmount').value);
-      await request('action', payload);
+      const response = await fetch(`/api/tables/${tableId}/player/${playerId}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      playerMessage.textContent = response.ok ? data.message || 'Done' : data.error || 'Request failed';
+      await refresh();
     }
 
     async function postSeatMove() {
@@ -346,7 +413,8 @@ HTML = """
 
     async function refresh() {
       try {
-        const response = await fetch(`/api/tables/${tableId}`, { cache: 'no-store' });
+        const api = isPlayerView ? `/api/tables/${tableId}/player/${playerId}?token=${encodeURIComponent(token)}` : `/api/tables/${tableId}`;
+        const response = await fetch(api, { cache: 'no-store' });
         if (!response.ok) throw new Error(await response.text());
         render(await response.json());
       } catch (error) {
@@ -375,10 +443,13 @@ class PokerWebServer:
         app.router.add_get("/", self.index)
         app.router.add_get("/healthz", self.healthz)
         app.router.add_get("/table/{table_id}", self.table_page)
+        app.router.add_get("/table/{table_id}/player/{user_id}", self.table_page)
         app.router.add_get("/api/tables", self.tables_api)
         app.router.add_get("/api/tables/{table_id}", self.table_api)
+        app.router.add_get("/api/tables/{table_id}/player/{user_id}", self.player_api)
         app.router.add_get("/api/tables/{table_id}/image", self.table_image)
         app.router.add_post("/api/tables/{table_id}/action", self.table_action)
+        app.router.add_post("/api/tables/{table_id}/player/{user_id}/action", self.player_action)
         app.router.add_post("/api/tables/{table_id}/seat/move", self.seat_move)
         app.router.add_post("/api/tables/{table_id}/offline/board", self.offline_board)
         app.router.add_post("/api/tables/{table_id}/offline/cards", self.offline_cards)
@@ -416,12 +487,49 @@ class PokerWebServer:
         except ValueError as exc:
             raise web.HTTPNotFound(text=str(exc))
 
+    async def player_api(self, request: web.Request) -> web.Response:
+        try:
+            return web.json_response(
+                serialize_player_table(
+                    self.registry,
+                    request.match_info["table_id"],
+                    int(request.match_info["user_id"]),
+                    request.query.get("token", ""),
+                )
+            )
+        except ValueError as exc:
+            raise web.HTTPForbidden(text=str(exc))
+
     async def table_image(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
-            return web.Response(body=render_table(table).getvalue(), content_type="image/png")
+            viewer_id = request.query.get("viewer_id")
+            token = request.query.get("token", "")
+            parsed_viewer = int(viewer_id) if viewer_id else None
+            if parsed_viewer is not None:
+                _require_player_token(table, parsed_viewer, token)
+            return web.Response(body=render_table(table, parsed_viewer).getvalue(), content_type="image/png")
         except ValueError as exc:
             raise web.HTTPNotFound(text=str(exc))
+
+    async def player_action(self, request: web.Request) -> web.Response:
+        try:
+            table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user_id = int(request.match_info["user_id"])
+            payload = await request.json()
+            _require_player_token(table, user_id, str(payload.get("token", "")))
+            action = str(payload.get("action", ""))
+            amount = payload.get("amount")
+            message = table.apply_action(
+                user_id,
+                Action(action),
+                int(amount) if amount not in (None, "") else None,
+            )
+            await self.registry.record_finished_hand_once(table)
+            await self.registry.publish("web.player_action", table, user_id=user_id, action=action)
+            return web.json_response({"ok": True, "message": message})
+        except Exception as exc:
+            return self.error_response(exc)
 
     async def table_action(self, request: web.Request) -> web.Response:
         try:
@@ -435,6 +543,8 @@ class PokerWebServer:
                 table.finish_showdown()
                 message = "Showdown resolved."
             else:
+                if table.mode != "offline":
+                    raise ValueError("Player actions must use the private player view.")
                 user_id = int(payload["user_id"])
                 amount = payload.get("amount")
                 message = table.apply_action(
@@ -496,3 +606,7 @@ class PokerWebServer:
 def table_url(config: AppConfig, table: object) -> str:
     channel_id = getattr(table, "channel_id")
     return f"{config.public_base_url}/table/{channel_id}"
+
+
+def player_url(config: AppConfig, table: object, player: object) -> str:
+    return f"{table_url(config, table)}/player/{player.user_id}?token={player.web_token}"

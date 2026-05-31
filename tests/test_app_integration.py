@@ -8,11 +8,11 @@ from poker_bot.registry import TableRegistry
 from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
 from poker_bot.game import Action, Phase
-from poker_bot.web_server import serialize_public_table
+from poker_bot.web_server import serialize_player_table, serialize_public_table
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_website_table_snapshot_exposes_hole_cards_for_table_play(self):
+    async def test_public_table_snapshot_hides_hole_cards(self):
         registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
         table = await registry.create_table(123, "online", 10, 20, 1000)
         table.add_player(1, "Alice")
@@ -25,7 +25,23 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("hole_cards", snapshot_text)
         for player in table.players.values():
             for card in player.hole:
-                self.assertIn(card.label(), snapshot_text)
+                self.assertNotIn(card.label(), snapshot_text)
+
+    async def test_player_table_snapshot_only_exposes_own_hole_cards(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        table = await registry.create_table(123, "online", 10, 20, 1000)
+        table.add_player(1, "Alice")
+        table.add_player(2, "Bob")
+        table.start_hand()
+
+        alice = table.players[1]
+        bob = table.players[2]
+        snapshot_text = repr(serialize_player_table(registry, str(table.channel_id), 1, alice.web_token))
+
+        for card in alice.hole:
+            self.assertIn(card.label(), snapshot_text)
+        for card in bob.hole:
+            self.assertNotIn(card.label(), snapshot_text)
 
     async def test_registry_can_create_multiple_tables(self):
         registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
@@ -47,6 +63,22 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(table.phase, {Phase.PREFLOP, Phase.FLOP, Phase.FINISHED})
         self.assertGreater(sum(player.committed for player in table.players.values()), 0)
+
+    async def test_timeout_refunds_current_bets_and_stops_hand(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        table = await registry.create_table(123, "online", 10, 20, 1000)
+        table.add_player(1, "Alice")
+        table.add_player(2, "Bob")
+        table.hand_timeout_seconds = 0
+        table.start_hand()
+        total_chips = sum(player.chips for player in table.players.values())
+
+        table.last_action_at -= 10
+        self.assertTrue(table.expire_if_needed())
+
+        self.assertFalse(table.hand_running)
+        self.assertEqual(sum(player.chips for player in table.players.values()), total_chips + 30)
+        self.assertIn("refunded", table.last_result)
 
     def test_stats_store_creates_parent_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:

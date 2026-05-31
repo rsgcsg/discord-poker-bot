@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import OrderedDict
+import secrets
+import time
 from typing import Iterable
 
 from .cards import Card, Deck, cards_text, parse_cards
@@ -39,6 +41,7 @@ class PlayerState:
     committed: int = 0
     start_chips: int = 0
     offline_cards: list[Card] = field(default_factory=list)
+    web_token: str = field(default_factory=lambda: secrets.token_urlsafe(18))
 
     def reset_for_hand(self) -> None:
         self.hole = []
@@ -77,6 +80,9 @@ class PokerTable:
     hand_running: bool = False
     stats_recorded: bool = False
     max_seats: int = 10
+    last_action_at: float = field(default_factory=time.time)
+    hand_timeout_seconds: int = 900
+    game_over: bool = False
 
     def add_player(self, user_id: int, name: str) -> str:
         if self.hand_running:
@@ -129,6 +135,11 @@ class PokerTable:
         return f"{self.players[second_user_id].name} and {self.players[first_user_id].name} swapped seats."
 
     def start_hand(self) -> list[int]:
+        self.expire_if_needed()
+        if self.game_over:
+            raise ValueError("This table is game over.")
+        if self.hand_running:
+            raise ValueError("A hand is already running.")
         seated = [player for player in self.players.values() if player.chips > 0]
         if len(seated) < 2:
             raise ValueError("At least 2 players with chips are required.")
@@ -144,6 +155,8 @@ class PokerTable:
         self.acted = set()
         self.last_result = ""
         self.stats_recorded = False
+        self.last_action_at = time.time()
+        self.game_over = False
 
         order = self.active_order(include_folded=True)
         self.dealer_index %= len(order)
@@ -209,6 +222,7 @@ class PokerTable:
         return max(0, self.highest_bet - self.players[user_id].bet)
 
     def apply_action(self, user_id: int, action: Action, amount: int | None = None) -> str:
+        self.expire_if_needed()
         if self.phase not in {Phase.PREFLOP, Phase.FLOP, Phase.TURN, Phase.RIVER}:
             raise ValueError("No betting round is active.")
         if user_id != self.current_user_id:
@@ -273,7 +287,39 @@ class PokerTable:
             message = f"{player.name} raises to {amount} ({paid} more)."
 
         self._after_action()
+        self.last_action_at = time.time()
         return message
+
+    def legal_actions_for(self, user_id: int) -> list[str]:
+        self.expire_if_needed()
+        if user_id != self.current_user_id:
+            return []
+        player = self.players.get(user_id)
+        if player is None or player.folded or player.all_in or player.chips <= 0:
+            return []
+        to_call = self.amount_to_call(user_id)
+        if to_call > 0:
+            return [Action.CALL.value, Action.RAISE_TO.value, Action.ALL_IN.value, Action.FOLD.value]
+        return [Action.CHECK.value, Action.RAISE_TO.value, Action.ALL_IN.value]
+
+    def can_start_next_hand(self) -> bool:
+        return not self.hand_running and len([player for player in self.players.values() if player.chips > 0]) >= 2 and not self.game_over
+
+    def expire_if_needed(self) -> bool:
+        if not self.hand_running:
+            return False
+        if time.time() - self.last_action_at <= self.hand_timeout_seconds:
+            return False
+        for player in self.players.values():
+            player.chips += player.committed
+            player.bet = 0
+            player.committed = 0
+        self.phase = Phase.FINISHED
+        self.current_user_id = None
+        self.hand_running = False
+        self.last_result = "Hand stopped: no action before the timeout. Current bets were refunded."
+        self._update_game_over()
+        return True
 
     def _commit(self, user_id: int, amount: int) -> int:
         if amount < 0:
@@ -357,6 +403,7 @@ class PokerTable:
         self.hand_running = False
         self.last_result = f"{winners[0].name} wins {total} chips. Everyone else folded."
         self._rotate_dealer()
+        self._update_game_over()
 
     def finish_showdown(self) -> list[PotAward]:
         self.phase = Phase.SHOWDOWN
@@ -383,6 +430,7 @@ class PokerTable:
         self.current_user_id = None
         self.hand_running = False
         self._rotate_dealer()
+        self._update_game_over()
         return awards
 
     def _award_side_pots(self) -> list[PotAward]:
@@ -442,7 +490,11 @@ class PokerTable:
             for index, winner in enumerate(winners)
         )
         self._rotate_dealer()
+        self._update_game_over()
         return self.last_result
+
+    def _update_game_over(self) -> None:
+        self.game_over = len([player for player in self.players.values() if player.chips > 0]) < 2
 
     def hand_finished_needs_stats(self) -> bool:
         return self.phase == Phase.FINISHED and not self.stats_recorded
@@ -455,11 +507,16 @@ class PokerTable:
             "big_blind": self.big_blind,
             "starting_chips": self.starting_chips,
             "phase": self.phase.value,
+            "hand_running": self.hand_running,
             "dealer_index": self.dealer_index,
             "current_user_id": self.current_user_id,
             "board": [card.label() for card in self.board],
             "pot": sum(player.committed for player in self.players.values()),
             "highest_bet": self.highest_bet,
+            "last_action_at": self.last_action_at,
+            "hand_timeout_seconds": self.hand_timeout_seconds,
+            "can_start_next_hand": self.can_start_next_hand(),
+            "game_over": self.game_over,
             "players": [
                 {
                     "seat": index + 1,

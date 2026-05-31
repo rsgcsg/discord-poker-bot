@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .game import PokerTable
-from .web_server import table_url
+from .web_server import player_url, table_url
 
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,11 @@ class SeatingView(discord.ui.View):
             message = self.table.add_player(interaction.user.id, interaction.user.display_name)
             await self.runtime.registry.publish("player.joined", self.table, user_id=interaction.user.id)
             await publish_table(self.runtime, interaction, self.table, message)
+            player = self.table.players[interaction.user.id]
+            await interaction.followup.send(
+                f"Your private player link: {player_url(self.runtime.config, self.table, player)}",
+                ephemeral=True,
+            )
         except Exception as exc:
             await send_error(interaction, exc)
 
@@ -140,6 +145,11 @@ class PokerCog(commands.Cog):
             message = table.add_player(interaction.user.id, interaction.user.display_name)
             await self.runtime.registry.publish("player.joined", table, user_id=interaction.user.id)
             await publish_table(self.runtime, interaction, table, message)
+            player = table.players[interaction.user.id]
+            await interaction.followup.send(
+                f"Your private player link: {player_url(self.runtime.config, table, player)}",
+                ephemeral=True,
+            )
         except Exception as exc:
             await send_error(interaction, exc)
 
