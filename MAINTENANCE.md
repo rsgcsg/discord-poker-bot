@@ -73,8 +73,8 @@ Adapters:
 
 - 可以公开座位、筹码、下注、公共牌、状态、结果。
 - 公共桌面不能显示线上模式玩家手牌。
-- 玩家页面通过 token 只显示自己的手牌。
-- 如果以后要防作弊，需要加入 Discord OAuth 登录和服务端 session。
+- 单个牌桌 URL 通过 Discord OAuth session 判断登录玩家。
+- 已入座玩家只看到自己的手牌；未登录或未入座用户不能操作。
 
 ## 数据和状态
 
@@ -101,6 +101,8 @@ POKER_DB_PATH=poker_stats.sqlite3
 POKER_WEB_HOST=127.0.0.1
 POKER_WEB_PORT=8765
 POKER_PUBLIC_BASE_URL=http://127.0.0.1:8765
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
 ```
 
 云上：
@@ -110,6 +112,8 @@ DISCORD_TOKEN=...
 DISCORD_GUILD_ID=你的测试服务器ID
 POKER_PUBLIC_BASE_URL=https://你的真实公网域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
+DISCORD_CLIENT_ID=...
+DISCORD_CLIENT_SECRET=...
 ```
 
 平台如果提供 `PORT`，程序会自动使用它。
@@ -141,6 +145,7 @@ Web smoke test 可参考测试中的 `PokerWebServer` 用法，至少验证：
 - `/healthz`
 - `/api/tables/<id>`
 - `/api/tables/<id>/image`
+- `/login` 会跳转到 Discord OAuth 授权页
 
 Docker 验证：
 
@@ -156,11 +161,15 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - `DISCORD_TOKEN` 只存在于本地或云平台 secret。
 - `DISCORD_TOKEN` 是 Bot token 本体，不带引号、不带 `Bot ` 前缀。
 - `POKER_PUBLIC_BASE_URL` 是真实 HTTPS 地址。
+- Discord Developer Portal 的 OAuth2 Redirects 包含 `https://你的域名/oauth/callback`。
+- 云平台设置了 `DISCORD_CLIENT_ID` 和 `DISCORD_CLIENT_SECRET`。
 - `/healthz` 返回成功。
 - Discord slash commands 已同步。
 - `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Table` 链接。
+- `/poker_launch` 在启用 Activities 后能启动 Discord 内嵌 App。
 - Discord 内没有 `Call` / `Raise` / `Fold` / `Start Hand` 流程按钮。
 - 外部页面能打开并自动刷新。
+- 入座玩家登录 Discord 后只能看到自己的手牌。
 - 外部页面能开始牌局并执行下注动作。
 
 ## 常见故障
@@ -187,10 +196,8 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 
 ## 已知限制
 
-- 当前没有用户登录系统，外部页面是公开控制台。
-- 当前私人玩家视角依赖 token 链接，不是完整登录系统。
+- 登录 session 存在当前进程内存，服务重启会失效。
 - live table 不是持久化状态。
 - 当前不支持多实例。
-- 如果玩家转发自己的私人链接，别人可以看到该玩家手牌并代操作。
 
-这些限制都可以扩展，但需要先设计认证、共享状态和事件一致性。
+这些限制都可以扩展，但需要先设计 Redis/Postgres 状态层、session 持久化和事件一致性。

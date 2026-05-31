@@ -8,7 +8,7 @@ from poker_bot.registry import TableRegistry
 from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
 from poker_bot.game import Action, Phase
-from poker_bot.web_server import serialize_player_table, serialize_public_table
+from poker_bot.web_server import serialize_public_table, serialize_viewer_table
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -34,11 +34,10 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         table.add_player(2, "Bob")
         table.start_hand()
 
-        alice = table.players[1]
         bob = table.players[2]
-        snapshot_text = repr(serialize_player_table(registry, str(table.channel_id), 1, alice.web_token))
+        snapshot_text = repr(serialize_viewer_table(registry, str(table.channel_id), 1))
 
-        for card in alice.hole:
+        for card in table.players[1].hole:
             self.assertIn(card.label(), snapshot_text)
         for card in bob.hole:
             self.assertNotIn(card.label(), snapshot_text)
@@ -94,6 +93,8 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "POKER_WEB_HOST": "127.0.0.1",
                 "POKER_WEB_PORT": "1111",
                 "POKER_PUBLIC_BASE_URL": "https://example.com/",
+                "DISCORD_CLIENT_ID": "123",
+                "DISCORD_CLIENT_SECRET": "secret",
             },
             clear=True,
         ):
@@ -101,6 +102,8 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.web_host, "0.0.0.0")
         self.assertEqual(config.web_port, 9999)
         self.assertEqual(config.public_base_url, "https://example.com")
+        self.assertEqual(config.discord_client_id, "123")
+        self.assertEqual(config.discord_redirect_uri, "https://example.com/oauth/callback")
 
 
 if __name__ == "__main__":

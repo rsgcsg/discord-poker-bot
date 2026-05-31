@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import OrderedDict
-import secrets
 import time
 from typing import Iterable
 
@@ -41,7 +40,6 @@ class PlayerState:
     committed: int = 0
     start_chips: int = 0
     offline_cards: list[Card] = field(default_factory=list)
-    web_token: str = field(default_factory=lambda: secrets.token_urlsafe(18))
 
     def reset_for_hand(self) -> None:
         self.hole = []

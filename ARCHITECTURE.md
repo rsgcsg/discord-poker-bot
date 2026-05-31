@@ -1,6 +1,6 @@
 # Architecture Notes
 
-项目目标：Discord 只负责创建牌桌、加入/离开牌桌和发链接，外部 web 页面负责完整游戏流程，核心德州扑克规则保持独立可测试。
+项目目标：Discord 只负责创建牌桌、加入/离开牌桌、启动内嵌 App 和发单个牌桌链接，web 页面负责完整游戏流程，核心德州扑克规则保持独立可测试。
 
 ## Runtime
 
@@ -68,13 +68,13 @@
 职责：
 
 - Discord slash commands 和 seating buttons
-- 外部牌桌页面和公开 API
+- 牌桌页面、Discord OAuth session 和 API
 - PNG 牌桌渲染
 
 限制：
 
 - 不在 adapter 里实现核心规则
-- 当前网站是游戏控制台，会显示线上玩家手牌
+- 网站根据 Discord 登录 session 只显示当前玩家自己的手牌
 - Discord command 只调用 domain/application 层
 
 ## Data Flow
@@ -82,9 +82,10 @@
 1. Discord command 创建 table，并回复 `Open Table` 链接。
 2. Discord Join/Leave button 只负责入座/离座。
 3. 浏览器打开 `web_server.py` 的 `/table/<table_id>`。
-4. 页面轮询 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image`。
-5. 页面 POST 到 web API 来开始牌局、下注、调座位、录入线下牌面和摊牌。
-6. `TableRegistry` 发布同步事件，必要时写入统计。
+4. 玩家通过 `/login` 使用 Discord OAuth 登录。
+5. 页面轮询 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image`；服务端用 session 决定是否显示自己的手牌。
+6. 页面 POST 到 web API 来开始牌局、下注、调座位、录入线下牌面和摊牌。
+7. `TableRegistry` 发布同步事件，必要时写入统计。
 
 ## Extension Points
 
@@ -93,11 +94,11 @@
 - 新增 `SyncBackend` 实现。
 - 不要把同步逻辑放进 `game.py`。
 
-私人玩家视角：
+Discord 内嵌 App：
 
-- 先设计认证和玩家身份绑定。
-- 再把 web API 拆成 public table view 和 private player view。
-- 私人 API 才能隐藏其他玩家手牌。
+- `/poker_launch` 使用 Discord interaction 的 `launch_activity` response。
+- Developer Portal 需要启用 Activities 并配置 URL Mapping 到公网域名。
+- 目前登录仍走 OAuth2 redirect；后续可以接入 Embedded App SDK 的前端 authenticate 流程。
 
 多实例部署：
 

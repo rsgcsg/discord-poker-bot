@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
+from urllib.parse import urlencode
 
+from aiohttp import ClientSession
 from aiohttp import web
 
 from .config import AppConfig
@@ -18,10 +21,8 @@ def serialize_public_table(registry: TableRegistry, table_id: str) -> dict[str, 
     return serialize_table(registry, table_id)
 
 
-def serialize_player_table(registry: TableRegistry, table_id: str, user_id: int, token: str) -> dict[str, object]:
-    table = registry.get_by_public_id(table_id)
-    _require_player_token(table, user_id, token)
-    return serialize_table(registry, table_id, user_id)
+def serialize_viewer_table(registry: TableRegistry, table_id: str, viewer_id: int | None) -> dict[str, object]:
+    return serialize_table(registry, table_id, viewer_id)
 
 
 def serialize_table(registry: TableRegistry, table_id: str, viewer_id: int | None = None) -> dict[str, object]:
@@ -32,7 +33,8 @@ def serialize_table(registry: TableRegistry, table_id: str, viewer_id: int | Non
     roles = table.seat_roles()
     data["current_player_name"] = current.name if current else None
     data["viewer_id"] = viewer_id
-    data["viewer_legal_actions"] = table.legal_actions_for(viewer_id) if viewer_id else []
+    data["viewer_is_seated"] = viewer_id in table.players if viewer_id else False
+    data["viewer_legal_actions"] = table.legal_actions_for(viewer_id) if data["viewer_is_seated"] else []
     data["seconds_until_timeout"] = max(0, int(table.hand_timeout_seconds - (time.time() - table.last_action_at))) if table.hand_running else None
     for player in data["players"]:
         player["roles"] = roles.get(player["user_id"], [])
@@ -43,10 +45,10 @@ def serialize_table(registry: TableRegistry, table_id: str, viewer_id: int | Non
     return data
 
 
-def _require_player_token(table: object, user_id: int, token: str) -> None:
-    player = table.players.get(user_id)
-    if player is None or not token or player.web_token != token:
-        raise ValueError("Invalid player link.")
+def _safe_next_path(value: str | None) -> str:
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return "/"
+    return value
 
 
 HTML = """
@@ -169,7 +171,7 @@ HTML = """
       gap: 10px;
       margin-bottom: 18px;
     }
-    button, select, input {
+    button, select, input, a.button {
       width: 100%;
       border: 1px solid var(--line);
       background: #172535;
@@ -177,12 +179,15 @@ HTML = """
       min-height: 38px;
       padding: 8px 10px;
       font: inherit;
+      text-align: center;
+      text-decoration: none;
+      display: block;
     }
-    button {
+    button, a.button {
       cursor: pointer;
       font-weight: 700;
     }
-    button.primary {
+    button.primary, a.button.primary {
       background: #1c7a52;
       border-color: #35a673;
     }
@@ -217,6 +222,7 @@ HTML = """
       <div class="meta">
         <span class="pill" id="phase">Loading</span>
         <span class="pill" id="pot">Pot -</span>
+        <span class="pill" id="viewer">Not signed in</span>
         <span class="pill" id="updated">Connecting</span>
       </div>
     </header>
@@ -225,14 +231,14 @@ HTML = """
         <img id="tableImage" alt="Poker table">
       </section>
       <aside>
+        <div class="controls" id="authPanel"></div>
         <h2>Controls</h2>
         <div class="controls" id="tableControls">
           <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
           <div class="grid2">
-            <select id="seatPlayer"></select>
             <input id="seatNumber" type="number" min="1" placeholder="Seat">
+            <button onclick="postSeatMove()">Move My Seat</button>
           </div>
-          <button onclick="postSeatMove()">Move Seat</button>
           <div id="offlineControls">
             <input id="boardCards" placeholder="Board: Ah Kd Qs 7c 2h">
             <button onclick="postOfflineBoard()">Set Board</button>
@@ -264,25 +270,23 @@ HTML = """
   <script>
     const parts = window.location.pathname.split('/').filter(Boolean);
     const tableId = parts[1];
-    const playerId = parts[2] === 'player' ? Number(parts[3]) : null;
-    const token = new URLSearchParams(window.location.search).get('token') || '';
-    const isPlayerView = Boolean(playerId && token);
     const image = document.getElementById('tableImage');
     const phase = document.getElementById('phase');
     const pot = document.getElementById('pot');
+    const viewer = document.getElementById('viewer');
     const updated = document.getElementById('updated');
     const facts = document.getElementById('facts');
     const seats = document.getElementById('seats');
     const result = document.getElementById('result');
     const title = document.getElementById('title');
     const actor = document.getElementById('actor');
-    const seatPlayer = document.getElementById('seatPlayer');
     const cardPlayer = document.getElementById('cardPlayer');
     const message = document.getElementById('message');
     const playerMessage = document.getElementById('playerMessage');
     const actionButtons = document.getElementById('actionButtons');
     const tableControls = document.getElementById('tableControls');
     const playerControls = document.getElementById('playerControls');
+    const authPanel = document.getElementById('authPanel');
     let latest = null;
 
     function text(value) {
@@ -294,9 +298,14 @@ HTML = """
       title.textContent = `${data.mode.toUpperCase()} Texas Hold'em`;
       phase.textContent = `Phase ${data.phase}`;
       pot.textContent = `Pot ${data.pot}`;
+      viewer.textContent = data.authenticated ? `${data.viewer_name}` : 'Not signed in';
       updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-      const imageAuth = isPlayerView ? `&viewer_id=${playerId}&token=${encodeURIComponent(token)}` : '';
-      image.src = `/api/tables/${tableId}/image?v=${Date.now()}${imageAuth}`;
+      image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
+      if (data.authenticated) {
+        authPanel.innerHTML = `<div class="row"><span>Signed in</span><strong>${data.viewer_name}</strong></div>${data.viewer_is_seated ? '' : '<div class="message">Join this table from Discord before playing.</div>'}<a class="button" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>`;
+      } else {
+        authPanel.innerHTML = `<a class="button primary" href="/login?next=${encodeURIComponent(location.pathname)}">Log in with Discord</a>`;
+      }
       facts.innerHTML = `
         <div class="row"><span>Blinds</span><strong>${data.small_blind}/${data.big_blind}</strong></div>
         <div class="row"><span>Current bet</span><strong>${data.highest_bet}</strong></div>
@@ -313,9 +322,11 @@ HTML = """
         </div>
       `).join('') || '<div class="row">No players seated</div>';
       result.textContent = data.last_result || '-';
-      tableControls.style.display = isPlayerView ? 'none' : 'grid';
-      playerControls.style.display = isPlayerView ? 'grid' : 'none';
-      document.getElementById('offlineControls').style.display = !isPlayerView && data.mode === 'offline' && data.hand_running ? 'grid' : 'none';
+      const canControl = data.authenticated && data.viewer_is_seated;
+      const showTableControls = canControl && (!data.hand_running || data.mode === 'offline');
+      tableControls.style.display = showTableControls ? 'grid' : 'none';
+      playerControls.style.display = canControl ? 'grid' : 'none';
+      document.getElementById('offlineControls').style.display = canControl && data.mode === 'offline' && data.hand_running ? 'grid' : 'none';
       document.getElementById('startButton').style.display = !data.hand_running && data.can_start_next_hand ? 'block' : 'none';
       updatePlayerSelects(data);
       updatePlayerControls(data);
@@ -323,7 +334,7 @@ HTML = """
 
     function updatePlayerSelects(data) {
       const options = data.players.map(player => `<option value="${player.user_id}">${player.seat}. ${player.name}</option>`).join('');
-      for (const select of [actor, seatPlayer, cardPlayer]) {
+      for (const select of [actor, cardPlayer]) {
         const old = select.value;
         select.innerHTML = options;
         if ([...select.options].some(option => option.value === old)) select.value = old;
@@ -333,7 +344,8 @@ HTML = """
 
     function updatePlayerControls(data) {
       actionButtons.innerHTML = '';
-      if (!isPlayerView) return;
+      if (!data.authenticated || !data.viewer_is_seated) return;
+      const playerId = data.viewer_id;
       const me = data.players.find(player => player.user_id === playerId);
       document.getElementById('raiseAmount').style.display = data.viewer_legal_actions.includes('raise_to') ? 'block' : 'none';
       document.getElementById('yourCards').textContent = me && me.hole_cards.length ? me.hole_cards.join(' ') : '-';
@@ -377,9 +389,9 @@ HTML = """
     }
 
     async function postPlayerAction(action) {
-      const payload = { action, token };
+      const payload = { action };
       if (action === 'raise_to') payload.amount = Number(document.getElementById('raiseAmount').value);
-      const response = await fetch(`/api/tables/${tableId}/player/${playerId}/action`, {
+      const response = await fetch(`/api/tables/${tableId}/me/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -391,7 +403,6 @@ HTML = """
 
     async function postSeatMove() {
       await request('seat/move', {
-        user_id: Number(seatPlayer.value),
         seat: Number(document.getElementById('seatNumber').value),
       });
     }
@@ -413,7 +424,7 @@ HTML = """
 
     async function refresh() {
       try {
-        const api = isPlayerView ? `/api/tables/${tableId}/player/${playerId}?token=${encodeURIComponent(token)}` : `/api/tables/${tableId}`;
+        const api = `/api/tables/${tableId}`;
         const response = await fetch(api, { cache: 'no-store' });
         if (!response.ok) throw new Error(await response.text());
         render(await response.json());
@@ -435,6 +446,8 @@ class PokerWebServer:
     def __init__(self, registry: TableRegistry, config: AppConfig) -> None:
         self.registry = registry
         self.config = config
+        self.sessions: dict[str, dict[str, object]] = {}
+        self.oauth_states: dict[str, str] = {}
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
 
@@ -442,14 +455,16 @@ class PokerWebServer:
         app = web.Application()
         app.router.add_get("/", self.index)
         app.router.add_get("/healthz", self.healthz)
+        app.router.add_get("/login", self.login)
+        app.router.add_get("/oauth/callback", self.oauth_callback)
+        app.router.add_get("/logout", self.logout)
         app.router.add_get("/table/{table_id}", self.table_page)
-        app.router.add_get("/table/{table_id}/player/{user_id}", self.table_page)
+        app.router.add_post("/api/token", self.activity_token)
         app.router.add_get("/api/tables", self.tables_api)
         app.router.add_get("/api/tables/{table_id}", self.table_api)
-        app.router.add_get("/api/tables/{table_id}/player/{user_id}", self.player_api)
         app.router.add_get("/api/tables/{table_id}/image", self.table_image)
         app.router.add_post("/api/tables/{table_id}/action", self.table_action)
-        app.router.add_post("/api/tables/{table_id}/player/{user_id}/action", self.player_action)
+        app.router.add_post("/api/tables/{table_id}/me/action", self.player_action)
         app.router.add_post("/api/tables/{table_id}/seat/move", self.seat_move)
         app.router.add_post("/api/tables/{table_id}/offline/board", self.offline_board)
         app.router.add_post("/api/tables/{table_id}/offline/cards", self.offline_cards)
@@ -465,12 +480,38 @@ class PokerWebServer:
             await self.runner.cleanup()
 
     async def index(self, request: web.Request) -> web.Response:
+        user = self.current_user(request)
         rows = [
             f'<li><a href="/table/{table.channel_id}">Table {table.channel_id} ({table.mode})</a></li>'
             for table in self.registry.tables()
         ]
-        body = "<h1>Texas Hold'em Tables</h1><ul>" + "\n".join(rows) + "</ul>"
-        return web.Response(text=f"<!doctype html><html><body>{body}</body></html>", content_type="text/html")
+        auth = (
+            f'<p>Signed in as {user["username"]}. <a href="/logout">Log out</a></p>'
+            if user
+            else '<p><a href="/login">Log in with Discord</a></p>'
+        )
+        list_html = "\n".join(rows) if rows else "<li>No live tables. Create one from Discord first.</li>"
+        body = f"""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Texas Hold'em Tables</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; background: #0b1118; color: #edf4f8; font-family: Arial, Helvetica, sans-serif; padding: 32px; }}
+    a {{ color: #efd074; }}
+    li {{ margin: 12px 0; }}
+  </style>
+</head>
+<body>
+  <h1>Texas Hold'em Tables</h1>
+  {auth}
+  <ul>{list_html}</ul>
+</body>
+</html>
+"""
+        return web.Response(text=body, content_type="text/html")
 
     async def healthz(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "tables": len(self.registry.tables())})
@@ -483,31 +524,21 @@ class PokerWebServer:
 
     async def table_api(self, request: web.Request) -> web.Response:
         try:
-            return web.json_response(serialize_public_table(self.registry, request.match_info["table_id"]))
+            user = self.current_user(request)
+            viewer_id = int(user["user_id"]) if user else None
+            data = serialize_viewer_table(self.registry, request.match_info["table_id"], viewer_id)
+            data["authenticated"] = user is not None
+            data["viewer_name"] = user["username"] if user else None
+            data["activity_client_id"] = self.config.discord_client_id
+            return web.json_response(data)
         except ValueError as exc:
             raise web.HTTPNotFound(text=str(exc))
-
-    async def player_api(self, request: web.Request) -> web.Response:
-        try:
-            return web.json_response(
-                serialize_player_table(
-                    self.registry,
-                    request.match_info["table_id"],
-                    int(request.match_info["user_id"]),
-                    request.query.get("token", ""),
-                )
-            )
-        except ValueError as exc:
-            raise web.HTTPForbidden(text=str(exc))
 
     async def table_image(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
-            viewer_id = request.query.get("viewer_id")
-            token = request.query.get("token", "")
-            parsed_viewer = int(viewer_id) if viewer_id else None
-            if parsed_viewer is not None:
-                _require_player_token(table, parsed_viewer, token)
+            user = self.current_user(request)
+            parsed_viewer = int(user["user_id"]) if user and int(user["user_id"]) in table.players else None
             return web.Response(body=render_table(table, parsed_viewer).getvalue(), content_type="image/png")
         except ValueError as exc:
             raise web.HTTPNotFound(text=str(exc))
@@ -515,9 +546,10 @@ class PokerWebServer:
     async def player_action(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
-            user_id = int(request.match_info["user_id"])
+            user = self.require_user(request)
+            user_id = int(user["user_id"])
+            self.require_seated(table, user_id)
             payload = await request.json()
-            _require_player_token(table, user_id, str(payload.get("token", "")))
             action = str(payload.get("action", ""))
             amount = payload.get("amount")
             message = table.apply_action(
@@ -534,6 +566,8 @@ class PokerWebServer:
     async def table_action(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            self.require_seated(table, int(user["user_id"]))
             payload = await request.json()
             action = payload.get("action")
             if action == "start":
@@ -544,7 +578,7 @@ class PokerWebServer:
                 message = "Showdown resolved."
             else:
                 if table.mode != "offline":
-                    raise ValueError("Player actions must use the private player view.")
+                    raise ValueError("Player actions must use the logged-in player controls.")
                 user_id = int(payload["user_id"])
                 amount = payload.get("amount")
                 message = table.apply_action(
@@ -561,9 +595,12 @@ class PokerWebServer:
     async def seat_move(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            user_id = int(user["user_id"])
+            self.require_seated(table, user_id)
             payload = await request.json()
-            message = table.move_player_to_seat(int(payload["user_id"]), int(payload["seat"]))
-            await self.registry.publish("web.seat_moved", table)
+            message = table.move_player_to_seat(user_id, int(payload["seat"]))
+            await self.registry.publish("web.seat_moved", table, user_id=user_id)
             return web.json_response({"ok": True, "message": message})
         except Exception as exc:
             return self.error_response(exc)
@@ -571,6 +608,8 @@ class PokerWebServer:
     async def offline_board(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            self.require_seated(table, int(user["user_id"]))
             payload = await request.json()
             message = table.set_offline_board(str(payload.get("cards", "")))
             await self.registry.publish("web.offline_board", table)
@@ -581,6 +620,8 @@ class PokerWebServer:
     async def offline_cards(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            self.require_seated(table, int(user["user_id"]))
             payload = await request.json()
             message = table.set_offline_cards(int(payload["user_id"]), str(payload.get("cards", "")))
             await self.registry.publish("web.offline_cards", table)
@@ -591,6 +632,8 @@ class PokerWebServer:
     async def award(self, request: web.Request) -> web.Response:
         try:
             table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            self.require_seated(table, int(user["user_id"]))
             payload = await request.json()
             message = table.manual_award([int(payload["user_id"])])
             await self.registry.record_finished_hand_once(table)
@@ -602,11 +645,130 @@ class PokerWebServer:
     def error_response(self, exc: Exception) -> web.Response:
         return web.json_response({"ok": False, "error": str(exc)}, status=400)
 
+    async def login(self, request: web.Request) -> web.Response:
+        if not self.config.discord_client_id or not self.config.discord_client_secret:
+            return self.error_response(ValueError("Discord login is not configured. Set DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET."))
+        state = secrets.token_urlsafe(24)
+        self.oauth_states[state] = _safe_next_path(request.query.get("next"))
+        params = {
+            "client_id": self.config.discord_client_id,
+            "redirect_uri": self.config.discord_redirect_uri,
+            "response_type": "code",
+            "scope": "identify",
+            "state": state,
+        }
+        raise web.HTTPFound(f"https://discord.com/oauth2/authorize?{urlencode(params)}")
+
+    async def oauth_callback(self, request: web.Request) -> web.Response:
+        code = request.query.get("code")
+        state = request.query.get("state", "")
+        next_path = self.oauth_states.pop(state, None)
+        if not code or next_path is None:
+            raise web.HTTPBadRequest(text="Missing Discord OAuth code or state.")
+
+        token_payload = {
+            "client_id": self.config.discord_client_id,
+            "client_secret": self.config.discord_client_secret,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": self.config.discord_redirect_uri,
+        }
+        async with ClientSession() as session:
+            async with session.post("https://discord.com/api/oauth2/token", data=token_payload) as token_response:
+                if token_response.status >= 400:
+                    raise web.HTTPUnauthorized(text="Discord token exchange failed.")
+                token_data = await token_response.json()
+            headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+            async with session.get("https://discord.com/api/users/@me", headers=headers) as user_response:
+                if user_response.status >= 400:
+                    raise web.HTTPUnauthorized(text="Discord user lookup failed.")
+                user_data = await user_response.json()
+
+        session_id = self.create_session(user_data)
+        response = web.HTTPFound(next_path)
+        self.set_session_cookie(response, session_id)
+        raise response
+
+    async def activity_token(self, request: web.Request) -> web.Response:
+        if not self.config.discord_client_id or not self.config.discord_client_secret:
+            return self.error_response(ValueError("Discord Activity auth is not configured."))
+        payload = await request.json()
+        code = str(payload.get("code", ""))
+        if not code:
+            return self.error_response(ValueError("Discord authorization code is required."))
+
+        token_payload = {
+            "client_id": self.config.discord_client_id,
+            "client_secret": self.config.discord_client_secret,
+            "grant_type": "authorization_code",
+            "code": code,
+        }
+        async with ClientSession() as session:
+            async with session.post("https://discord.com/api/oauth2/token", data=token_payload) as token_response:
+                if token_response.status >= 400:
+                    raise web.HTTPUnauthorized(text="Discord token exchange failed.")
+                token_data = await token_response.json()
+            headers = {"Authorization": f"Bearer {token_data['access_token']}"}
+            async with session.get("https://discord.com/api/users/@me", headers=headers) as user_response:
+                if user_response.status >= 400:
+                    raise web.HTTPUnauthorized(text="Discord user lookup failed.")
+                user_data = await user_response.json()
+
+        session_id = self.create_session(user_data)
+        response = web.json_response(
+            {
+                "access_token": token_data["access_token"],
+                "user": {
+                    "id": user_data["id"],
+                    "username": user_data.get("global_name") or user_data.get("username") or user_data["id"],
+                },
+            }
+        )
+        self.set_session_cookie(response, session_id)
+        return response
+
+    async def logout(self, request: web.Request) -> web.Response:
+        session_id = request.cookies.get("poker_session", "")
+        if session_id:
+            self.sessions.pop(session_id, None)
+        response = web.HTTPFound(_safe_next_path(request.query.get("next")))
+        response.del_cookie("poker_session")
+        raise response
+
+    def current_user(self, request: web.Request) -> dict[str, object] | None:
+        session_id = request.cookies.get("poker_session", "")
+        return self.sessions.get(session_id)
+
+    def require_user(self, request: web.Request) -> dict[str, object]:
+        user = self.current_user(request)
+        if user is None:
+            raise ValueError("Log in with Discord first.")
+        return user
+
+    def require_seated(self, table: object, user_id: int) -> None:
+        if user_id not in table.players:
+            raise ValueError("Join this table from Discord before playing.")
+
+    def create_session(self, user_data: dict[str, object]) -> str:
+        session_id = secrets.token_urlsafe(32)
+        self.sessions[session_id] = {
+            "user_id": int(user_data["id"]),
+            "username": user_data.get("global_name") or user_data.get("username") or user_data["id"],
+            "avatar": user_data.get("avatar"),
+        }
+        return session_id
+
+    def set_session_cookie(self, response: web.StreamResponse, session_id: str) -> None:
+        response.set_cookie(
+            "poker_session",
+            session_id,
+            httponly=True,
+            secure=self.config.public_base_url.startswith("https://"),
+            samesite="Lax",
+            max_age=60 * 60 * 24 * 14,
+        )
+
 
 def table_url(config: AppConfig, table: object) -> str:
     channel_id = getattr(table, "channel_id")
     return f"{config.public_base_url}/table/{channel_id}"
-
-
-def player_url(config: AppConfig, table: object, player: object) -> str:
-    return f"{table_url(config, table)}/player/{player.user_id}?token={player.web_token}"
