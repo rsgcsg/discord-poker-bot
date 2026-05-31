@@ -37,6 +37,7 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
             os.environ,
             {
                 "PORT": "9999",
+                "POKER_WEB_HOST": "127.0.0.1",
                 "POKER_WEB_PORT": "1111",
                 "POKER_PUBLIC_BASE_URL": "https://example.com/",
             },

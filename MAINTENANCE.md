@@ -113,6 +113,12 @@ POKER_DB_PATH=/data/poker_stats.sqlite3
 
 平台如果提供 `PORT`，程序会自动使用它。
 
+云平台注意：
+
+- 当 `PORT` 存在时，程序会强制监听 `0.0.0.0`。
+- Railway/Render/Fly 上通常不要设置 `POKER_WEB_HOST` 或 `POKER_WEB_PORT`。
+- 如果公网域名打不开但 Discord bot 已连接，优先检查是否错误设置了 `POKER_WEB_HOST=127.0.0.1`。
+
 ## 验证命令
 
 本地测试：
@@ -146,12 +152,35 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - `.env` 没有被提交。
 - `.env.example` 只包含占位符。
 - `DISCORD_TOKEN` 只存在于本地或云平台 secret。
+- `DISCORD_TOKEN` 是 Bot token 本体，不带引号、不带 `Bot ` 前缀。
 - `POKER_PUBLIC_BASE_URL` 是真实 HTTPS 地址。
 - `/healthz` 返回成功。
 - Discord slash commands 已同步。
 - `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Table` 链接。
 - 外部页面能打开并自动刷新。
 - 线上模式手牌只通过私信发送。
+
+## 常见故障
+
+`discord.errors.LoginFailure: Improper token has been passed`
+
+- 云平台里的 `DISCORD_TOKEN` 不是有效 bot token。
+- 去 Discord Developer Portal 的 Bot 页面 reset/copy token。
+- 更新云平台环境变量并重新部署。
+- 不要使用 Application ID、Client Secret、Public Key。
+- 不要给 token 加 `Bot ` 前缀。
+
+`Privileged message content intent is missing`
+
+- 当前项目主要使用 slash commands，这个 warning 通常不是启动失败原因。
+- 真正导致退出的错误一般会在 warning 后面的 traceback 里。
+
+公网网址打不开，但日志显示 Discord gateway connected
+
+- Discord token 已经正常。
+- 检查云平台是否有 Public Networking/Domain。
+- 检查 `POKER_PUBLIC_BASE_URL` 是否是该域名。
+- 检查是否设置了 `POKER_WEB_HOST=127.0.0.1`；云上应该删除这个变量或让程序使用 `0.0.0.0`。
 
 ## 已知限制
 

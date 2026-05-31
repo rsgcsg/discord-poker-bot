@@ -21,15 +21,15 @@ POKER_PUBLIC_BASE_URL=https://你的真实公网域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 ```
 
+`DISCORD_TOKEN` 只填 Bot 页面的 token 本体，不要加引号，不要加 `Bot ` 前缀。如果日志出现 `Improper token has been passed` 或 `401 Unauthorized`，说明云平台里的 token 无效或已被重置，需要重新复制 token 并 redeploy。
+
 可选环境变量：
 
 ```env
-POKER_WEB_HOST=0.0.0.0
-POKER_WEB_PORT=8765
 POKER_SYNC_EVENT_LOG=
 ```
 
-很多云平台会自动提供 `PORT`。程序会优先读取 `PORT`，所以通常不用手动设置 `POKER_WEB_PORT`。
+很多云平台会自动提供 `PORT`。程序会优先读取 `PORT`，并在云平台环境下自动监听 `0.0.0.0`。Railway 上不要设置 `POKER_WEB_HOST=127.0.0.1`，否则公网入口无法访问容器内服务。通常也不用手动设置 `POKER_WEB_PORT`。
 
 ## Docker 本地验证
 
@@ -77,6 +77,15 @@ DISCORD_TOKEN=...
 POKER_PUBLIC_BASE_URL=https://你的云平台域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 ```
+
+Railway/Render/Fly 这类平台通常不要设置：
+
+```env
+POKER_WEB_HOST
+POKER_WEB_PORT
+```
+
+让平台提供的 `PORT` 生效即可。
 
 Persistent disk:
 
@@ -127,6 +136,7 @@ docker run -d \
 部署后确认：
 
 - Bot token 设置到了云平台环境变量。
+- token 来自 `Bot` 页面，不是 Application ID、Client Secret 或 Public Key。
 - 邀请链接包含 `bot` 和 `applications.commands` scope。
 - Bot 有发送消息、嵌入链接、使用 slash command 的权限。
 - 线上模式需要玩家允许接收 bot 私信，否则私发手牌会失败。

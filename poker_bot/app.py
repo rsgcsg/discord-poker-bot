@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import discord
+
 from .bot import create_bot
 from .config import AppConfig
 from .registry import TableRegistry
@@ -34,4 +36,11 @@ def run() -> None:
             "DISCORD_TOKEN is missing.\n"
             "Set DISCORD_TOKEN in .env or your cloud environment, then run: python main.py"
         )
-    create_bot(runtime).run(runtime.config.discord_token)
+    try:
+        create_bot(runtime).run(runtime.config.discord_token)
+    except discord.LoginFailure as exc:
+        raise SystemExit(
+            "Discord rejected DISCORD_TOKEN.\n"
+            "Reset the bot token in Discord Developer Portal, update DISCORD_TOKEN in your cloud environment, "
+            "then redeploy. Do not include quotes, spaces, or the word 'Bot'."
+        ) from exc
