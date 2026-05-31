@@ -1,13 +1,13 @@
 # Discord Texas Hold'em Bot
 
-一个可部署到云上的德州扑克服务。Discord 只负责创建牌桌、加入/离开牌桌、启动内嵌 App、发送单个牌桌链接和查看统计；真正的开始牌局、下注、摊牌和线下记账流程都在网站中完成。玩家打开同一个网址后用 Discord 登录，服务端按 Discord user id 判断他能看到哪一手牌、能执行哪些动作。
+一个可部署到云上的德州扑克服务。Discord 只负责创建牌桌、启动内嵌 App、发送单个牌桌链接和查看统计；真正的入座、开始牌局、下注、摊牌和线下记账流程都在网站中完成。玩家在 Discord 内打开 Activity 后会自动使用 Discord 身份登录。
 
 ## 功能
 
 - **线上模式**：网站开始牌局、发牌、显示玩家手牌，网站按钮完成 `Check` / `Call` / `Raise` / `All-in` / `Fold`。
 - **线下模式**：实体桌自己发牌，网站负责记录下注、筹码、盲注、底池、公共牌、玩家手牌、摊牌判定和统计。
 - **单网址牌桌**：同一个 `/table/<table_id>` 同时服务观战、玩家操作和自己的手牌显示。
-- **Discord 登录**：不再发私人 token 链接；玩家用 Discord OAuth 登录，只有自己的 Discord 账号能看到自己的手牌和行动按钮。
+- **Discord 自动登录**：Activity 内用 Embedded App SDK 自动取得 Discord 身份；浏览器打开时仍保留 OAuth fallback。
 - **Discord 内嵌**：支持 `/poker_launch` 启动 Discord Activity，配置 Activity URL Mapping 后可以在 Discord 内打开网站。
 - **座位管理**：支持移动座位和交换座位，保证德州扑克座位顺序清晰。
 - **统计**：SQLite 记录玩家手数、胜/负/平和净筹码。
@@ -67,17 +67,15 @@ http://127.0.0.1:8765/healthz
 线上模式：
 
 - `/poker_online_create small_blind big_blind starting_chips`
-- 点击 `Join` 入座
-- 打开 `Open Table` 或使用 `/poker_launch` 打开内嵌 App
-- 在网站里 `Log in with Discord`，然后开局、看自己的手牌、下注
+- 使用 `/poker_launch` 打开内嵌 App，或点击 `Open Table`
+- 在网站里点击 `Join This Table` 入座，然后开局、看自己的手牌、下注
 - `/poker_link` 获取外部牌桌链接
 
 线下模式：
 
 - `/poker_offline_create small_blind big_blind starting_chips`
-- `/poker_join`
-- 打开 `Open Table`
-- 在网站上调整座位、开始游戏、记录下注、录入公共牌/玩家手牌、摊牌或手动发奖
+- 使用 `/poker_launch` 打开内嵌 App，或点击 `Open Table`
+- 在网站上入座、调整座位、开始游戏、记录下注、录入公共牌/玩家手牌、摊牌或手动发奖
 
 统计和状态：
 
@@ -125,7 +123,7 @@ https://你的域名/oauth/callback
 
 - `main.py`：程序入口。
 - `poker_bot/app.py`：组装配置、统计、牌桌注册表、web server 和 Discord bot。
-- `poker_bot/bot.py`：Discord 创建/加入/离开/链接/统计指令。
+- `poker_bot/bot.py`：Discord 创建/启动/链接/统计指令。
 - `poker_bot/web_server.py`：外部牌桌页面和公开 API。
 - `poker_bot/table_renderer.py`：生成牌桌 PNG。
 - `poker_bot/game.py`：德州扑克状态机。

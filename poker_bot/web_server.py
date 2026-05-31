@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import html as html_lib
 import secrets
 import time
 from urllib.parse import urlencode
@@ -191,6 +192,10 @@ HTML = """
       background: #1c7a52;
       border-color: #35a673;
     }
+    button.secondary {
+      background: #203246;
+      border-color: #4b657e;
+    }
     button.danger {
       background: #7c2430;
       border-color: #aa3a4a;
@@ -288,9 +293,22 @@ HTML = """
     const playerControls = document.getElementById('playerControls');
     const authPanel = document.getElementById('authPanel');
     let latest = null;
+    let activityAuthAttempted = false;
+    let activityAuthRunning = false;
+    let activityAuthFailed = false;
 
     function text(value) {
       return value === null || value === undefined || value === '' ? '-' : String(value);
+    }
+
+    function html(value) {
+      return text(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[char]));
     }
 
     function render(data) {
@@ -301,21 +319,17 @@ HTML = """
       viewer.textContent = data.authenticated ? `${data.viewer_name}` : 'Not signed in';
       updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
       image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
-      if (data.authenticated) {
-        authPanel.innerHTML = `<div class="row"><span>Signed in</span><strong>${data.viewer_name}</strong></div>${data.viewer_is_seated ? '' : '<div class="message">Join this table from Discord before playing.</div>'}<a class="button" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>`;
-      } else {
-        authPanel.innerHTML = `<a class="button primary" href="/login?next=${encodeURIComponent(location.pathname)}">Log in with Discord</a>`;
-      }
+      renderAuthPanel(data);
       facts.innerHTML = `
         <div class="row"><span>Blinds</span><strong>${data.small_blind}/${data.big_blind}</strong></div>
         <div class="row"><span>Current bet</span><strong>${data.highest_bet}</strong></div>
         <div class="row"><span>Board</span><strong>${data.board.length ? data.board.join(' ') : '-'}</strong></div>
-        <div class="row"><span>Turn</span><strong class="turn">${text(data.current_player_name)}</strong></div>
+        <div class="row"><span>Turn</span><strong class="turn">${html(data.current_player_name)}</strong></div>
         <div class="row"><span>Timeout</span><strong>${data.seconds_until_timeout === null ? '-' : data.seconds_until_timeout + 's'}</strong></div>
       `;
       seats.innerHTML = data.players.map(player => `
         <div class="seat">
-          <strong>Seat ${player.seat}: ${player.name}</strong>
+          <strong>Seat ${player.seat}: ${html(player.name)}</strong>
           <span>${player.chips} chips - bet ${player.bet} - committed ${player.committed}</span>
           <span>${player.roles.length ? player.roles.join(' / ') + ' - ' : ''}${player.folded ? 'folded' : player.all_in ? 'all-in' : 'active'}</span>
           <span>Cards: ${player.hole_cards.length ? player.hole_cards.join(' ') : player.offline_cards.length ? player.offline_cards.join(' ') : '-'}</span>
@@ -330,10 +344,41 @@ HTML = """
       document.getElementById('startButton').style.display = !data.hand_running && data.can_start_next_hand ? 'block' : 'none';
       updatePlayerSelects(data);
       updatePlayerControls(data);
+      if (!data.authenticated && !activityAuthAttempted && data.activity_client_id) {
+        startDiscordActivityAuth(data.activity_client_id);
+      }
+    }
+
+    function renderAuthPanel(data) {
+      if (!data.authenticated) {
+        const status = activityAuthRunning
+          ? '<div class="message">Connecting with Discord...</div>'
+          : activityAuthFailed
+            ? '<div class="message">Discord Activity login was not available. Browser login is still available.</div>'
+            : '<div class="message">Opening inside Discord will sign you in automatically.</div>';
+        authPanel.innerHTML = `
+          ${status}
+          <button class="primary" onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Continue in Discord</button>
+          <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Login Fallback</a>
+        `;
+        return;
+      }
+      if (!data.viewer_is_seated) {
+        authPanel.innerHTML = `
+          <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
+          <button class="primary" onclick="postJoin()">Join This Table</button>
+          <a class="button secondary" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>
+        `;
+        return;
+      }
+      authPanel.innerHTML = `
+        <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
+        ${data.hand_running ? '' : '<button onclick="postLeave()">Leave Table</button>'}
+      `;
     }
 
     function updatePlayerSelects(data) {
-      const options = data.players.map(player => `<option value="${player.user_id}">${player.seat}. ${player.name}</option>`).join('');
+      const options = data.players.map(player => `<option value="${player.user_id}">${player.seat}. ${html(player.name)}</option>`).join('');
       for (const select of [actor, cardPlayer]) {
         const old = select.value;
         select.innerHTML = options;
@@ -388,6 +433,14 @@ HTML = """
       await request('action', { action });
     }
 
+    async function postJoin() {
+      await request('me/join', {});
+    }
+
+    async function postLeave() {
+      await request('me/leave', {});
+    }
+
     async function postPlayerAction(action) {
       const payload = { action };
       if (action === 'raise_to') payload.amount = Number(document.getElementById('raiseAmount').value);
@@ -434,6 +487,47 @@ HTML = """
       }
     }
 
+    async function startDiscordActivityAuth(clientId) {
+      if (!clientId || activityAuthRunning) return;
+      activityAuthAttempted = true;
+      activityAuthRunning = true;
+      activityAuthFailed = false;
+      renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
+      try {
+        const { DiscordSDK } = await import('https://esm.sh/@discord/embedded-app-sdk@1.10.0');
+        const discordSdk = new DiscordSDK(clientId);
+        await withTimeout(discordSdk.ready(), 4000);
+        const { code } = await discordSdk.commands.authorize({
+          client_id: clientId,
+          response_type: 'code',
+          state: '',
+          prompt: 'none',
+          scope: ['identify'],
+        });
+        const tokenResponse = await fetch('/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok) throw new Error(tokenData.error || 'Discord token exchange failed');
+        await discordSdk.commands.authenticate({ access_token: tokenData.access_token });
+        activityAuthRunning = false;
+        await refresh();
+      } catch (error) {
+        activityAuthRunning = false;
+        activityAuthFailed = true;
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
+      }
+    }
+
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
+      ]);
+    }
+
     refresh();
     setInterval(refresh, 1500);
   </script>
@@ -463,6 +557,8 @@ class PokerWebServer:
         app.router.add_get("/api/tables", self.tables_api)
         app.router.add_get("/api/tables/{table_id}", self.table_api)
         app.router.add_get("/api/tables/{table_id}/image", self.table_image)
+        app.router.add_post("/api/tables/{table_id}/me/join", self.join_table)
+        app.router.add_post("/api/tables/{table_id}/me/leave", self.leave_table)
         app.router.add_post("/api/tables/{table_id}/action", self.table_action)
         app.router.add_post("/api/tables/{table_id}/me/action", self.player_action)
         app.router.add_post("/api/tables/{table_id}/seat/move", self.seat_move)
@@ -486,7 +582,7 @@ class PokerWebServer:
             for table in self.registry.tables()
         ]
         auth = (
-            f'<p>Signed in as {user["username"]}. <a href="/logout">Log out</a></p>'
+            f'<p>Signed in as {html_lib.escape(str(user["username"]))}. <a href="/logout">Log out</a></p>'
             if user
             else '<p><a href="/login">Log in with Discord</a></p>'
         )
@@ -559,6 +655,28 @@ class PokerWebServer:
             )
             await self.registry.record_finished_hand_once(table)
             await self.registry.publish("web.player_action", table, user_id=user_id, action=action)
+            return web.json_response({"ok": True, "message": message})
+        except Exception as exc:
+            return self.error_response(exc)
+
+    async def join_table(self, request: web.Request) -> web.Response:
+        try:
+            table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            user_id = int(user["user_id"])
+            message = table.add_player(user_id, str(user["username"]))
+            await self.registry.publish("web.player_joined", table, user_id=user_id)
+            return web.json_response({"ok": True, "message": message})
+        except Exception as exc:
+            return self.error_response(exc)
+
+    async def leave_table(self, request: web.Request) -> web.Response:
+        try:
+            table = self.registry.get_by_public_id(request.match_info["table_id"])
+            user = self.require_user(request)
+            user_id = int(user["user_id"])
+            message = table.remove_player(user_id)
+            await self.registry.publish("web.player_left", table, user_id=user_id)
             return web.json_response({"ok": True, "message": message})
         except Exception as exc:
             return self.error_response(exc)
@@ -747,7 +865,7 @@ class PokerWebServer:
 
     def require_seated(self, table: object, user_id: int) -> None:
         if user_id not in table.players:
-            raise ValueError("Join this table from Discord before playing.")
+            raise ValueError("Join this table before playing.")
 
     def create_session(self, user_data: dict[str, object]) -> str:
         session_id = secrets.token_urlsafe(32)
@@ -759,12 +877,13 @@ class PokerWebServer:
         return session_id
 
     def set_session_cookie(self, response: web.StreamResponse, session_id: str) -> None:
+        is_https = self.config.public_base_url.startswith("https://")
         response.set_cookie(
             "poker_session",
             session_id,
             httponly=True,
-            secure=self.config.public_base_url.startswith("https://"),
-            samesite="Lax",
+            secure=is_https,
+            samesite="None" if is_https else "Lax",
             max_age=60 * 60 * 24 * 14,
         )
 

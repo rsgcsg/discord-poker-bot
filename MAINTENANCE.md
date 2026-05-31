@@ -57,7 +57,7 @@ Adapters:
 - Slash commands: `PokerCog`
 - 入座按钮: `SeatingView`
 
-不要在 Discord 回调里直接写复杂规则。Discord 只负责创建、加入、离开、链接和统计。
+不要在 Discord 回调里直接写复杂规则。Discord 只负责创建、启动 Activity、链接和统计；入座、离座和游戏流程在网站里处理。
 
 ## 修改外部牌桌
 
@@ -73,7 +73,7 @@ Adapters:
 
 - 可以公开座位、筹码、下注、公共牌、状态、结果。
 - 公共桌面不能显示线上模式玩家手牌。
-- 单个牌桌 URL 通过 Discord OAuth session 判断登录玩家。
+- 单个牌桌 URL 通过 Discord Activity SDK 或 OAuth session 判断登录玩家。
 - 已入座玩家只看到自己的手牌；未登录或未入座用户不能操作。
 
 ## 数据和状态
@@ -145,6 +145,7 @@ Web smoke test 可参考测试中的 `PokerWebServer` 用法，至少验证：
 - `/healthz`
 - `/api/tables/<id>`
 - `/api/tables/<id>/image`
+- `/api/token` 用于 Activity SDK code exchange
 - `/login` 会跳转到 Discord OAuth 授权页
 
 Docker 验证：

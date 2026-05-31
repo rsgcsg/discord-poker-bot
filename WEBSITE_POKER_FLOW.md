@@ -1,6 +1,6 @@
 # Website Poker Flow Specification
 
-目标：Discord 只负责创建牌桌、加入/离开牌桌、启动内嵌 App、发送单个链接和统计。网站负责完整牌局流程，并尽量接近真实德州扑克客户端的交互。
+目标：Discord 只负责创建牌桌、启动内嵌 App、发送单个链接和统计。网站负责登录后入座和完整牌局流程，并尽量接近真实德州扑克客户端的交互。
 
 ## 1. 视角
 
@@ -17,7 +17,8 @@ URL:
 - 公共桌面、观战、大屏和玩家操作都使用同一个 URL。
 - 显示座位、筹码、底池、公共牌、当前行动玩家、D/SB/BB。
 - 未登录或未入座时不显示任何玩家手牌，也不显示操作按钮。
-- 登录 Discord 且已经从 Discord 入座后，只显示该登录玩家自己的手牌。
+- Activity 内自动使用 Discord 身份登录；浏览器模式保留 OAuth fallback。
+- 登录且已经在网站内入座后，只显示该登录玩家自己的手牌。
 - 在 lobby 或一局结束后，已入座玩家可以 `Start Hand` 和移动自己的座位。
 - 一局进行中，只给当前行动玩家显示当前合法动作。
 
@@ -33,6 +34,7 @@ URL:
 用途：
 
 - 通过 Discord OAuth2 `identify` scope 取得 Discord user id。
+- Activity 内优先使用 Embedded App SDK `authorize()` / `/api/token` / `authenticate()` 自动登录。
 - 服务端建立 `poker_session` cookie。
 - 后续 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image` 自动按 session 决定可见信息。
 - 不再使用私人 token 链接。
@@ -42,7 +44,7 @@ URL:
 允许：
 
 - Discord 创建牌桌。
-- Discord Join/Leave。
+- 网站里已登录用户入座/离座。
 - 网站里已登录、已入座玩家移动自己的座位。
 - 网站里已登录、已入座玩家开始一局。
 
@@ -110,8 +112,7 @@ Discord 只保留：
 
 - 创建线上桌。
 - 创建线下桌。
-- Join。
-- Leave。
+- 启动内嵌 App。
 - 获取链接。
 - 列出牌桌。
 - 查看统计。
@@ -126,12 +127,9 @@ Discord 不做：
 
 ## 7. 安全边界
 
-当前 token 链接不是完整账号登录。它能避免公开桌面直接看到所有牌，但如果玩家把自己的链接转发出去，别人仍然可以代操作。
-
-生产级防作弊下一步：
-
 已实现：
 
+- Activity 内自动 Discord 登录。
 - Discord OAuth 登录。
 - 绑定 Discord user id。
 - 服务端 session。
@@ -142,4 +140,4 @@ Discord 不做：
 - session 持久化到 Redis。
 - CSRF token。
 - 管理员/房主权限。
-- Discord Embedded App SDK 前端鉴权，减少浏览器跳转。
+- 更完整的 Activity 房间/邀请/Presence 集成。

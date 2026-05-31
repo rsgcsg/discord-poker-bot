@@ -21,7 +21,7 @@ def table_embed(runtime: object, table: PokerTable, title: str = "Texas Hold'em"
     embed = discord.Embed(title=title, description=summary, color=color)
     embed.add_field(name="Table ID", value=str(table.channel_id), inline=True)
     embed.add_field(name="External table", value=table_url(runtime.config, table), inline=False)
-    embed.set_footer(text="Discord creates/seats tables only. Play the hand on the website.")
+    embed.set_footer(text="Open the Activity, sign in automatically, then join and play inside the app.")
     return embed
 
 
@@ -59,28 +59,6 @@ class SeatingView(discord.ui.View):
             )
         )
 
-    @discord.ui.button(label="Join", style=discord.ButtonStyle.success)
-    async def join(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        try:
-            message = self.table.add_player(interaction.user.id, interaction.user.display_name)
-            await self.runtime.registry.publish("player.joined", self.table, user_id=interaction.user.id)
-            await publish_table(self.runtime, interaction, self.table, message)
-            await interaction.followup.send(
-                f"Joined. Open the table and log in with Discord: {table_url(self.runtime.config, self.table)}",
-                ephemeral=True,
-            )
-        except Exception as exc:
-            await send_error(interaction, exc)
-
-    @discord.ui.button(label="Leave", style=discord.ButtonStyle.secondary)
-    async def leave(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        try:
-            message = self.table.remove_player(interaction.user.id)
-            await self.runtime.registry.publish("player.left", self.table, user_id=interaction.user.id)
-            await publish_table(self.runtime, interaction, self.table, message)
-        except Exception as exc:
-            await send_error(interaction, exc)
-
 
 class PokerCog(commands.Cog):
     def __init__(self, runtime: object) -> None:
@@ -107,7 +85,7 @@ class PokerCog(commands.Cog):
                 big_blind,
                 starting_chips,
             )
-            await publish_table(self.runtime, interaction, table, "Online table created. Use the website to play.")
+            await publish_table(self.runtime, interaction, table, "Online table created. Launch the Activity, then join inside the app.")
         except Exception as exc:
             await send_error(interaction, exc)
 
@@ -132,33 +110,7 @@ class PokerCog(commands.Cog):
                 big_blind,
                 starting_chips,
             )
-            await publish_table(self.runtime, interaction, table, "Offline table created. Use the website to run the hand.")
-        except Exception as exc:
-            await send_error(interaction, exc)
-
-    @app_commands.command(name="poker_join", description="Join a poker table by table id.")
-    @app_commands.describe(table_id="Table ID shown in the create message")
-    async def poker_join(self, interaction: discord.Interaction, table_id: str) -> None:
-        try:
-            table = self.runtime.registry.get_by_public_id(table_id)
-            message = table.add_player(interaction.user.id, interaction.user.display_name)
-            await self.runtime.registry.publish("player.joined", table, user_id=interaction.user.id)
-            await publish_table(self.runtime, interaction, table, message)
-            await interaction.followup.send(
-                f"Joined. Open the table and log in with Discord: {table_url(self.runtime.config, table)}",
-                ephemeral=True,
-            )
-        except Exception as exc:
-            await send_error(interaction, exc)
-
-    @app_commands.command(name="poker_leave", description="Leave a poker table by table id.")
-    @app_commands.describe(table_id="Table ID shown in the create message")
-    async def poker_leave(self, interaction: discord.Interaction, table_id: str) -> None:
-        try:
-            table = self.runtime.registry.get_by_public_id(table_id)
-            message = table.remove_player(interaction.user.id)
-            await self.runtime.registry.publish("player.left", table, user_id=interaction.user.id)
-            await publish_table(self.runtime, interaction, table, message)
+            await publish_table(self.runtime, interaction, table, "Offline table created. Launch the Activity, then join inside the app.")
         except Exception as exc:
             await send_error(interaction, exc)
 

@@ -1,15 +1,16 @@
 # Discord Embedded App Setup
 
-目标：玩家在 Discord 里只接触一个 Poker App。Discord 负责开桌、入座和启动 App；网站负责完整游戏流程；登录身份来自 Discord。
+目标：玩家在 Discord 里只接触一个 Poker App。Discord 负责开桌和启动 App；网站负责登录后入座和完整游戏流程；登录身份来自 Discord。
 
 ## 当前实现
 
 - `/poker_online_create` 和 `/poker_offline_create` 创建牌桌。
-- `Join` / `/poker_join` 只负责把 Discord user id 放进座位列表。
 - `/table/<table_id>` 是唯一牌桌 URL。
-- `/login` 使用 Discord OAuth2 `identify` 登录。
+- Activity 内自动使用 Embedded App SDK 登录。
 - `/api/token` 给 Embedded App SDK 使用：前端拿到 SDK `authorize()` 返回的 code 后，交给服务端换取 access token，同时建立网站 session。
+- 浏览器 fallback 仍可通过 `/login` 使用 Discord OAuth2 `identify` 登录。
 - `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image` 根据服务端 session 只显示当前玩家自己的手牌。
+- `/api/tables/<table_id>/me/join` 和 `/api/tables/<table_id>/me/leave` 负责网站内入座/离座。
 - `/poker_launch` 调用 Discord 的 `launch_activity` response，用于启动内嵌 Activity。
 
 ## Developer Portal
@@ -41,14 +42,14 @@ POKER_PUBLIC_BASE_URL=https://你的域名
 1. 部署云服务。
 2. 打开 `https://你的域名/healthz`，确认返回 `ok: true`。
 3. Discord 中执行 `/poker_online_create`。
-4. 玩家点击 `Join`。
-5. 玩家打开 `Open Table`，或执行 `/poker_launch` 启动内嵌 App。
-6. 网站点击 `Log in with Discord`。
-7. 登录后开始牌局，只有当前登录玩家能看到自己的手牌和合法动作。
+4. 玩家执行 `/poker_launch` 启动内嵌 App，或点击 `Open Table`。
+5. Activity 内自动登录 Discord。
+6. 玩家在网站内点击 `Join This Table` 入座。
+7. 入座后开始牌局，只有当前登录玩家能看到自己的手牌和合法动作。
 
 ## Notes
 
 - 如果 `/poker_launch` 报错，先确认 Developer Portal 已启用 Activities，并且当前 Discord 客户端/频道支持 Activity。
 - 如果 OAuth 回调失败，检查 Redirect URI 是否和云平台域名完全一致。
 - 当前 session 在单进程内存里；多实例部署前需要 Redis/Postgres session 和 live table 状态。
-- 后续如果要完全消除 OAuth 页面跳转，可以在前端接入 Discord Embedded App SDK 的 `authorize()` / `authenticate()`，并调用当前后端的 `/api/token`。
+- 前端已接入 Discord Embedded App SDK 的 `authorize()` / `authenticate()`，并调用后端 `/api/token`。浏览器里不在 Activity 环境时会显示 OAuth fallback。
