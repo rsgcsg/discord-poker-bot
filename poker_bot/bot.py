@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 import discord
@@ -10,6 +11,9 @@ from .cards import cards_text
 from .game import Action, Phase, PokerTable
 from .table_renderer import render_private_hand
 from .web_server import table_url
+
+
+logger = logging.getLogger(__name__)
 
 
 def table_embed(runtime: object, table: PokerTable, title: str = "Texas Hold'em") -> discord.Embed:
@@ -412,7 +416,18 @@ class PokerBot(commands.Bot):
     async def setup_hook(self) -> None:
         await self.add_cog(PokerCog(self.runtime))
         await self.runtime.web_server.start()
-        await self.tree.sync()
+        if self.runtime.config.discord_guild_id:
+            guild = discord.Object(id=self.runtime.config.discord_guild_id)
+            self.tree.copy_global_to(guild=guild)
+            commands = await self.tree.sync(guild=guild)
+            logger.info(
+                "Synced %s Discord slash commands to guild %s",
+                len(commands),
+                self.runtime.config.discord_guild_id,
+            )
+        else:
+            commands = await self.tree.sync()
+            logger.info("Synced %s global Discord slash commands", len(commands))
 
     async def close(self) -> None:
         await self.runtime.web_server.stop()

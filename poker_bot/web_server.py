@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
+
 from aiohttp import web
 
 from .config import AppConfig
 from .registry import TableRegistry
 from .table_renderer import render_table
+
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_public_table(registry: TableRegistry, table_id: str) -> dict[str, object]:
@@ -242,6 +247,7 @@ class PokerWebServer:
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, self.config.web_host, self.config.web_port)
         await self.site.start()
+        logger.info("Poker web server listening on %s:%s", self.config.web_host, self.config.web_port)
 
     async def stop(self) -> None:
         if self.runner:

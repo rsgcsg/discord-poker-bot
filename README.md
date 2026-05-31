@@ -24,6 +24,8 @@ cp .env.example .env
 
 ```env
 DISCORD_TOKEN=你的DiscordBotToken
+# 可选：测试时填服务器ID，slash commands 会同步得更快
+DISCORD_GUILD_ID=
 POKER_DB_PATH=poker_stats.sqlite3
 POKER_WEB_HOST=127.0.0.1
 POKER_WEB_PORT=8765

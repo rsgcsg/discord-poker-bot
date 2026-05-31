@@ -14,6 +14,7 @@ class AppConfig:
     web_host: str = "127.0.0.1"
     web_port: int = 8765
     public_base_url: str = "http://127.0.0.1:8765"
+    discord_guild_id: int | None = None
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -28,8 +29,15 @@ class AppConfig:
             web_host=web_host,
             web_port=web_port,
             public_base_url=os.getenv("POKER_PUBLIC_BASE_URL", "http://127.0.0.1:8765").rstrip("/"),
+            discord_guild_id=_optional_int(os.getenv("DISCORD_GUILD_ID")),
         )
 
 
 def _clean_secret(value: str) -> str:
     return value.strip().strip('"').strip("'")
+
+
+def _optional_int(value: str | None) -> int | None:
+    if not value:
+        return None
+    return int(value.strip())

@@ -97,6 +97,7 @@ Adapters:
 
 ```env
 DISCORD_TOKEN=...
+DISCORD_GUILD_ID=
 POKER_DB_PATH=poker_stats.sqlite3
 POKER_WEB_HOST=127.0.0.1
 POKER_WEB_PORT=8765
@@ -107,6 +108,7 @@ POKER_PUBLIC_BASE_URL=http://127.0.0.1:8765
 
 ```env
 DISCORD_TOKEN=...
+DISCORD_GUILD_ID=你的测试服务器ID
 POKER_PUBLIC_BASE_URL=https://你的真实公网域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 ```
@@ -118,6 +120,7 @@ POKER_DB_PATH=/data/poker_stats.sqlite3
 - 当 `PORT` 存在时，程序会强制监听 `0.0.0.0`。
 - Railway/Render/Fly 上通常不要设置 `POKER_WEB_HOST` 或 `POKER_WEB_PORT`。
 - 如果公网域名打不开但 Discord bot 已连接，优先检查是否错误设置了 `POKER_WEB_HOST=127.0.0.1`。
+- 如果 slash commands 看不到，临时设置 `DISCORD_GUILD_ID` 到测试服务器 ID，让命令同步到单个服务器。
 
 ## 验证命令
 

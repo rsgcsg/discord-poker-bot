@@ -26,8 +26,11 @@ POKER_DB_PATH=/data/poker_stats.sqlite3
 可选环境变量：
 
 ```env
+DISCORD_GUILD_ID=
 POKER_SYNC_EVENT_LOG=
 ```
+
+如果你刚部署后 Discord 里看不到 `/poker_online_create`，建议临时设置 `DISCORD_GUILD_ID` 为你的测试服务器 ID。这样 slash commands 会同步到该服务器，通常比全局命令更快可见。
 
 很多云平台会自动提供 `PORT`。程序会优先读取 `PORT`，并在云平台环境下自动监听 `0.0.0.0`。Railway 上不要设置 `POKER_WEB_HOST=127.0.0.1`，否则公网入口无法访问容器内服务。通常也不用手动设置 `POKER_WEB_PORT`。
 
@@ -74,6 +77,7 @@ Environment variables:
 
 ```env
 DISCORD_TOKEN=...
+DISCORD_GUILD_ID=你的测试服务器ID
 POKER_PUBLIC_BASE_URL=https://你的云平台域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 ```
