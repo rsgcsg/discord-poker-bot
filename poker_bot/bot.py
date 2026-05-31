@@ -25,12 +25,53 @@ def table_embed(runtime: object, table: PokerTable, title: str = "Texas Hold'em"
     return embed
 
 
+def is_unsupported_activity_platform(error: Exception) -> bool:
+    return isinstance(error, discord.HTTPException) and getattr(error, "code", None) == 50231
+
+
+def launch_error_message(runtime: object, table: PokerTable | None, error: Exception) -> str:
+    if is_unsupported_activity_platform(error):
+        message = (
+            "Error: this Discord client platform is not enabled for the Poker Activity. "
+            "Enable the platform in Discord Developer Portal, or use Discord desktop/web. "
+        )
+        if table is not None:
+            message += f"Browser backup: {table_url(runtime.config, table)}"
+        else:
+            message += "You can still use the Browser Backup link from a table message."
+        return message
+    return f"Error: {error}"
+
+
+async def send_message_fallback(interaction: discord.Interaction, message: str) -> None:
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+        return
+    except (discord.NotFound, discord.HTTPException):
+        logger.warning("Interaction response failed; falling back to channel message.", exc_info=True)
+
+    if interaction.channel is not None:
+        await interaction.channel.send(f"{interaction.user.mention} {message}")
+
+
 async def send_error(interaction: discord.Interaction, error: Exception) -> None:
-    message = f"Error: {error}"
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+    await send_message_fallback(interaction, f"Error: {error}")
+
+
+async def launch_activity_for_table(
+    runtime: object,
+    interaction: discord.Interaction,
+    table: PokerTable | None = None,
+) -> None:
+    try:
+        if table is not None:
+            runtime.web_server.set_launch_target(interaction.user.id, table.channel_id)
+        await interaction.response.launch_activity()
+    except Exception as exc:
+        await send_message_fallback(interaction, launch_error_message(runtime, table, exc))
 
 
 async def publish_table(
@@ -61,11 +102,7 @@ class SeatingView(discord.ui.View):
 
     @discord.ui.button(label="Open Poker App", style=discord.ButtonStyle.primary)
     async def launch(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        try:
-            self.runtime.web_server.set_launch_target(interaction.user.id, self.table.channel_id)
-            await interaction.response.launch_activity()
-        except Exception as exc:
-            await send_error(interaction, exc)
+        await launch_activity_for_table(self.runtime, interaction, self.table)
 
 
 class PokerCog(commands.Cog):
@@ -133,23 +170,25 @@ class PokerCog(commands.Cog):
 
     @app_commands.command(name="poker_launch", description="Launch the embedded poker app in Discord.")
     async def poker_launch(self, interaction: discord.Interaction) -> None:
+        table = None
         try:
             latest_table_id = self.runtime.registry.latest_table_id()
             if latest_table_id is not None:
-                self.runtime.web_server.set_launch_target(interaction.user.id, latest_table_id)
-            await interaction.response.launch_activity()
+                table = self.runtime.registry.get(latest_table_id)
         except Exception as exc:
             await send_error(interaction, exc)
+            return
+        await launch_activity_for_table(self.runtime, interaction, table)
 
     @app_commands.command(name="poker_open", description="Launch the embedded poker app at a table.")
     @app_commands.describe(table_id="Table ID shown in the create message")
     async def poker_open(self, interaction: discord.Interaction, table_id: str) -> None:
         try:
             table = self.runtime.registry.get_by_public_id(table_id)
-            self.runtime.web_server.set_launch_target(interaction.user.id, table.channel_id)
-            await interaction.response.launch_activity()
         except Exception as exc:
             await send_error(interaction, exc)
+            return
+        await launch_activity_for_table(self.runtime, interaction, table)
 
     @app_commands.command(name="poker_tables", description="List live poker tables.")
     async def poker_tables(self, interaction: discord.Interaction) -> None:

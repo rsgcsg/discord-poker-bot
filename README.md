@@ -124,6 +124,8 @@ http://127.0.0.1:8765
 https://你的域名/oauth/callback
 ```
 
+如果 `Open Poker App` 报 `50231`，需要在 Discord Developer Portal 的 `Activities -> Settings` 里把当前客户端平台加入 Supported Platforms。Web/Desktop 默认最容易测试；手机端需要额外启用 iOS 和 Android。
+
 每次创建牌桌都会生成新的 table id，所以同一个 Discord 频道可以同时开多个牌桌。
 
 ## 项目结构

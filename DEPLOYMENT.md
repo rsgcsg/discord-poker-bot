@@ -171,6 +171,22 @@ docker run -d \
 
 如果 `/poker_launch` 或 `Open Poker App` 报错，通常是这个 Application 还没有启用 Activities，或者当前频道/客户端不支持启动 Activity。此时仍可用 `Browser Backup` 单网址方式测试完整游戏流程。
 
+如果 Railway 日志里出现：
+
+```text
+400 Bad Request (error code: 50231): The activity is not configured to support the user's current client platform
+```
+
+这不是牌桌代码没有启动，而是 Discord Developer Portal 里这个 Activity 没有勾选当前客户端平台。处理方式：
+
+1. 打开 Discord Developer Portal。
+2. 选择这个 Application。
+3. 打开 `Activities -> Settings`。
+4. 在 Supported Platforms 里勾选要支持的平台，至少勾选 Web/Desktop；如果要手机打开，勾选 iOS 和 Android。
+5. 保存后重新测试 `Open Poker App` 或 `/poker_open table_id`。
+
+如果当前 Discord 客户端仍然不允许启动 Activity，bot 会在频道里给出 `Browser Backup` 链接，方便先验证完整游戏流程。
+
 ## 生产注意事项
 
 - 不要把 `.env` 提交到仓库。

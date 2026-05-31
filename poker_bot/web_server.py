@@ -301,6 +301,19 @@ HTML = """
     let activityAuthRunning = false;
     let activityAuthFailed = false;
 
+    authPanel.addEventListener('click', event => {
+      const target = event.target.closest('[data-auth-action]');
+      if (!target) return;
+      const action = target.dataset.authAction;
+      if (action === 'retry') {
+        startDiscordActivityAuth(target.dataset.clientId || (latest && latest.activity_client_id) || '');
+      } else if (action === 'join') {
+        postJoin();
+      } else if (action === 'leave') {
+        postLeave();
+      }
+    });
+
     function text(value) {
       return value === null || value === undefined || value === '' ? '-' : String(value);
     }
@@ -362,26 +375,33 @@ HTML = """
             : '<div class="message">Authorizing with Discord automatically...</div>';
         authPanel.innerHTML = `
           ${status}
-          <button class="primary" onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Retry Discord Authorization</button>
+          <button class="primary" data-auth-action="retry" data-client-id="${html(data.activity_client_id || '')}">Retry Discord Authorization</button>
           <a class="button secondary" href="/">Back to Lobby</a>
           <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Backup</a>
+          <div id="authMessage" class="message"></div>
         `;
         return;
       }
       if (!data.viewer_is_seated) {
         authPanel.innerHTML = `
           <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
-          <button class="primary" onclick="postJoin()">Join This Table</button>
+          <button class="primary" data-auth-action="join">Join This Table</button>
           <a class="button secondary" href="/">Back to Lobby</a>
           <a class="button secondary" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>
+          <div id="authMessage" class="message"></div>
         `;
         return;
       }
       authPanel.innerHTML = `
         <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
         <a class="button secondary" href="/">Back to Lobby</a>
-        ${data.hand_running ? '' : '<button onclick="postLeave()">Leave Table</button>'}
+        ${data.hand_running ? '' : '<button data-auth-action="leave">Leave Table</button>'}
+        <div id="authMessage" class="message"></div>
       `;
+    }
+
+    function authMessageTarget() {
+      return document.getElementById('authMessage') || message;
     }
 
     function updatePlayerSelects(data) {
@@ -422,18 +442,30 @@ HTML = """
 
     async function request(path, payload = {}, targetMessage = message) {
       targetMessage.textContent = 'Working...';
-      const response = await fetch(`/api/tables/${tableId}/${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        targetMessage.textContent = data.error || 'Request failed';
-        return;
+      try {
+        const response = await fetch(`/api/tables/${tableId}/${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const responseText = await response.text();
+        let data = {};
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch (error) {
+          data = { error: responseText };
+        }
+        if (!response.ok) {
+          targetMessage.textContent = data.error || 'Request failed';
+          return false;
+        }
+        targetMessage.textContent = data.message || 'Done';
+        await refresh();
+        return true;
+      } catch (error) {
+        targetMessage.textContent = error.message || 'Network request failed';
+        return false;
       }
-      targetMessage.textContent = data.message || 'Done';
-      await refresh();
     }
 
     async function postTableAction(action) {
@@ -441,11 +473,11 @@ HTML = """
     }
 
     async function postJoin() {
-      await request('me/join', {});
+      await request('me/join', {}, authMessageTarget());
     }
 
     async function postLeave() {
-      await request('me/leave', {});
+      await request('me/leave', {}, authMessageTarget());
     }
 
     async function postPlayerAction(action) {
