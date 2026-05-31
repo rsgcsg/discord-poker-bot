@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from .game import PokerTable
 from .storage import StatsStore
 from .sync import SyncBackend, SyncEvent
@@ -12,18 +14,19 @@ class TableRegistry:
         self._tables: dict[int, PokerTable] = {}
         self._stats = stats
         self._sync = sync
+        self._last_table_id = 0
 
-    def get(self, channel_id: int | None) -> PokerTable:
-        if channel_id is None or channel_id not in self._tables:
-            raise ValueError("No poker table exists in this channel.")
-        return self._tables[channel_id]
+    def get(self, table_id: int | None) -> PokerTable:
+        if table_id is None or table_id not in self._tables:
+            raise ValueError("No poker table exists for that id.")
+        return self._tables[table_id]
 
     def get_by_public_id(self, public_id: str) -> PokerTable:
         try:
-            channel_id = int(public_id)
+            table_id = int(public_id)
         except ValueError as exc:
             raise ValueError("Invalid table id.") from exc
-        return self.get(channel_id)
+        return self.get(table_id)
 
     def tables(self) -> list[PokerTable]:
         return list(self._tables.values())
@@ -36,10 +39,18 @@ class TableRegistry:
         big_blind: int,
         starting_chips: int,
     ) -> PokerTable:
-        table = PokerTable(channel_id, mode, small_blind, big_blind, starting_chips)
-        self._tables[channel_id] = table
+        table_id = self._new_table_id()
+        table = PokerTable(table_id, mode, small_blind, big_blind, starting_chips)
+        self._tables[table_id] = table
         await self.publish("table.created", table)
         return table
+
+    def _new_table_id(self) -> int:
+        candidate = int(time.time() * 1000)
+        if candidate <= self._last_table_id:
+            candidate = self._last_table_id + 1
+        self._last_table_id = candidate
+        return candidate
 
     async def publish(self, event_type: str, table: PokerTable, **extra: object) -> None:
         payload = {"table": table.snapshot()}

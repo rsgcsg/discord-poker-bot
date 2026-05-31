@@ -143,7 +143,6 @@ docker run -d \
 - token 来自 `Bot` 页面，不是 Application ID、Client Secret 或 Public Key。
 - 邀请链接包含 `bot` 和 `applications.commands` scope。
 - Bot 有发送消息、嵌入链接、使用 slash command 的权限。
-- 线上模式需要玩家允许接收 bot 私信，否则私发手牌会失败。
 
 ## 生产注意事项
 
@@ -151,5 +150,5 @@ docker run -d \
 - 如果 token 曾经泄漏，立即在 Discord Developer Portal 重置。
 - 当前 live table 在内存中，服务重启会清空当前牌桌。
 - SQLite 只适合单实例部署；多实例需要共享状态和数据库迁移。
-- 外部牌桌页面是公开只读页面，不要把玩家手牌加入公开 API。
+- 外部牌桌页面是公开控制台，知道链接的人可以看到手牌并操作牌局。
 - 部署多个实例前，需要先设计 Redis/Postgres 状态层。

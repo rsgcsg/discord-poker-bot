@@ -55,11 +55,9 @@ Adapters:
 常见位置：
 
 - Slash commands: `PokerCog`
-- 游戏按钮: `GameActionView`
-- 开局/加入按钮: `LobbyView`
-- Raise 输入框: `RaiseModal`
+- 入座按钮: `SeatingView`
 
-不要在按钮回调里直接写复杂规则。按钮应该调用 `PokerTable` 或 `TableRegistry`。
+不要在 Discord 回调里直接写复杂规则。Discord 只负责创建、加入、离开、链接和统计。
 
 ## 修改外部牌桌
 
@@ -71,11 +69,11 @@ Adapters:
 
 - `poker_bot/table_renderer.py`
 
-公开 API 必须遵守：
+当前网站是主游戏界面：
 
 - 可以公开座位、筹码、下注、公共牌、状态、结果。
-- 不可以公开线上模式玩家手牌。
-- 私人手牌只能通过 Discord 私信发送给本人。
+- 可以显示线上模式玩家手牌，因为当前没有登录/私人视角。
+- 如果以后要防作弊，需要先加入身份认证和按玩家过滤的私人 API。
 
 ## 数据和状态
 
@@ -160,8 +158,9 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - `/healthz` 返回成功。
 - Discord slash commands 已同步。
 - `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Table` 链接。
+- Discord 内没有 `Call` / `Raise` / `Fold` / `Start Hand` 流程按钮。
 - 外部页面能打开并自动刷新。
-- 线上模式手牌只通过私信发送。
+- 外部页面能开始牌局并执行下注动作。
 
 ## 常见故障
 
@@ -187,9 +186,10 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 
 ## 已知限制
 
-- 当前没有用户登录系统，外部页面是公开只读。
+- 当前没有用户登录系统，外部页面是公开控制台。
+- 当前没有私人玩家视角，线上手牌会显示在网站上。
 - live table 不是持久化状态。
 - 当前不支持多实例。
-- 当前不支持从外部网页直接操作下注。
+- 当前网站操作没有权限校验，知道链接的人都可以操作牌桌。
 
 这些限制都可以扩展，但需要先设计认证、共享状态和事件一致性。

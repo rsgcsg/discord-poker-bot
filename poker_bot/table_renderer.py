@@ -160,10 +160,8 @@ def _draw_seat(
 def _visible_cards(table: PokerTable, player: PlayerState) -> list[Card | None]:
     if not table.hand_running and table.phase != Phase.FINISHED:
         return []
-    if len(player.hole) == 2 and (table.phase == Phase.FINISHED or table.mode == "offline"):
-        return player.hole
     if len(player.hole) == 2:
-        return [None, None]
+        return player.hole
     if len(player.offline_cards) == 2 and table.phase == Phase.FINISHED:
         return player.offline_cards
     if table.hand_running and not player.folded:

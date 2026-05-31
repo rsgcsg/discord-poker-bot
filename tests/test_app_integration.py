@@ -7,24 +7,46 @@ from poker_bot.config import AppConfig
 from poker_bot.registry import TableRegistry
 from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
+from poker_bot.game import Action, Phase
 from poker_bot.web_server import serialize_public_table
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    async def test_public_table_snapshot_does_not_expose_hole_cards(self):
+    async def test_website_table_snapshot_exposes_hole_cards_for_table_play(self):
         registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
         table = await registry.create_table(123, "online", 10, 20, 1000)
         table.add_player(1, "Alice")
         table.add_player(2, "Bob")
         table.start_hand()
 
-        snapshot = serialize_public_table(registry, "123")
+        snapshot = serialize_public_table(registry, str(table.channel_id))
         snapshot_text = repr(snapshot)
 
-        self.assertNotIn("hole", snapshot_text)
+        self.assertIn("hole_cards", snapshot_text)
         for player in table.players.values():
             for card in player.hole:
-                self.assertNotIn(card.label(), snapshot_text)
+                self.assertIn(card.label(), snapshot_text)
+
+    async def test_registry_can_create_multiple_tables(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        first = await registry.create_table(123, "online", 10, 20, 1000)
+        second = await registry.create_table(123, "offline", 5, 10, 500)
+
+        self.assertNotEqual(first.channel_id, second.channel_id)
+        self.assertEqual(len(registry.tables()), 2)
+
+    async def test_web_play_flow_can_start_and_act(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        table = await registry.create_table(123, "online", 10, 20, 1000)
+        table.add_player(1, "Alice")
+        table.add_player(2, "Bob")
+
+        table.start_hand()
+        actor = table.current_user_id
+        table.apply_action(actor, Action.CALL)
+
+        self.assertIn(table.phase, {Phase.PREFLOP, Phase.FLOP, Phase.FINISHED})
+        self.assertGreater(sum(player.committed for player in table.players.values()), 0)
 
     def test_stats_store_creates_parent_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
