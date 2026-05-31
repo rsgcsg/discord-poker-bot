@@ -53,11 +53,18 @@ class SeatingView(discord.ui.View):
         self.table = table
         self.add_item(
             discord.ui.Button(
-                label="Open Table",
+                label="Browser Backup",
                 style=discord.ButtonStyle.link,
                 url=table_url(runtime.config, table),
             )
         )
+
+    @discord.ui.button(label="Open Poker App", style=discord.ButtonStyle.primary)
+    async def launch(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        try:
+            await interaction.response.launch_activity()
+        except Exception as exc:
+            await send_error(interaction, exc)
 
 
 class PokerCog(commands.Cog):

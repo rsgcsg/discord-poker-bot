@@ -356,14 +356,14 @@ HTML = """
     function renderAuthPanel(data) {
       if (!data.authenticated) {
         const status = activityAuthRunning
-          ? '<div class="message">Connecting with Discord...</div>'
+          ? '<div class="message">Authorizing with Discord...</div>'
           : activityAuthFailed
-            ? '<div class="message">Discord Activity login was not available. Browser login is still available.</div>'
-            : '<div class="message">Opening inside Discord will sign you in automatically.</div>';
+            ? '<div class="message">Discord authorization did not start. Use the Open Poker App button in Discord, not the browser backup link.</div>'
+            : '<div class="message">Authorizing with Discord automatically...</div>';
         authPanel.innerHTML = `
           ${status}
-          <button class="primary" onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Continue in Discord</button>
-          <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Login Fallback</a>
+          <button class="primary" onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Retry Discord Authorization</button>
+          <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Backup</a>
         `;
         return;
       }
@@ -500,7 +500,7 @@ HTML = """
       try {
         const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
         const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 4000);
+        await withTimeout(discordSdk.ready(), 10000);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -508,13 +508,7 @@ HTML = """
           prompt: 'none',
           scope: ['identify'],
         });
-        const tokenResponse = await fetch('/api/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
-        });
-        const tokenData = await tokenResponse.json();
-        if (!tokenResponse.ok) throw new Error(tokenData.error || 'Discord token exchange failed');
+        const tokenData = await exchangeDiscordCode(code);
         await discordSdk.commands.authenticate({ access_token: tokenData.access_token });
         activityAuthRunning = false;
         await refresh();
@@ -530,6 +524,25 @@ HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    async function exchangeDiscordCode(code) {
+      let lastError = null;
+      for (const url of ['/.proxy/api/token', '/api/token']) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          const data = await response.json();
+          if (response.ok) return data;
+          lastError = new Error(data.error || 'Discord token exchange failed');
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Discord token exchange failed');
     }
 
     refresh();
@@ -704,15 +717,15 @@ LOBBY_HTML = """
         return;
       }
       const status = activityAuthRunning
-        ? '<p class="message">Connecting with Discord...</p>'
+        ? '<p class="message">Authorizing with Discord...</p>'
         : activityAuthFailed
-          ? '<p class="message">Discord Activity login was not available here. Use browser fallback only outside Discord.</p>'
-          : '<p class="message">Inside Discord, this app signs in automatically.</p>';
+          ? '<p class="message">Discord authorization did not start. Use the Open Poker App button in Discord, not the browser backup link.</p>'
+          : '<p class="message">Authorizing with Discord automatically...</p>';
       authPanel.innerHTML = `
         <h2>Discord Sign In</h2>
         ${status}
-        <button onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Continue in Discord</button>
-        <a class="button secondary" href="/login">Browser Login Fallback</a>
+        <button onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Retry Discord Authorization</button>
+        <a class="button secondary" href="/login">Browser Backup</a>
       `;
     }
 
@@ -731,7 +744,7 @@ LOBBY_HTML = """
       try {
         const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
         const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 5000);
+        await withTimeout(discordSdk.ready(), 10000);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -739,13 +752,7 @@ LOBBY_HTML = """
           prompt: 'none',
           scope: ['identify'],
         });
-        const tokenResponse = await fetch('/api/token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
-        });
-        const tokenData = await tokenResponse.json();
-        if (!tokenResponse.ok) throw new Error(tokenData.error || 'Discord token exchange failed');
+        const tokenData = await exchangeDiscordCode(code);
         await discordSdk.commands.authenticate({ access_token: tokenData.access_token });
         activityAuthRunning = false;
         await refresh();
@@ -761,6 +768,25 @@ LOBBY_HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    async function exchangeDiscordCode(code) {
+      let lastError = null;
+      for (const url of ['/.proxy/api/token', '/api/token']) {
+        try {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code }),
+          });
+          const data = await response.json();
+          if (response.ok) return data;
+          lastError = new Error(data.error || 'Discord token exchange failed');
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('Discord token exchange failed');
     }
 
     refresh().catch(error => {
@@ -792,8 +818,10 @@ class PokerWebServer:
         app.router.add_get("/oauth/callback", self.oauth_callback)
         app.router.add_get("/logout", self.logout)
         app.router.add_get("/assets/discord-sdk.mjs", self.discord_sdk_asset)
+        app.router.add_get("/.proxy/assets/discord-sdk.mjs", self.discord_sdk_asset)
         app.router.add_get("/table/{table_id}", self.table_page)
         app.router.add_post("/api/token", self.activity_token)
+        app.router.add_post("/.proxy/api/token", self.activity_token)
         app.router.add_get("/api/lobby", self.lobby_api)
         app.router.add_get("/api/tables", self.tables_api)
         app.router.add_get("/api/tables/{table_id}", self.table_api)

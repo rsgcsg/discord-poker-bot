@@ -69,14 +69,14 @@ http://127.0.0.1:8765/healthz
 线上模式：
 
 - `/poker_online_create small_blind big_blind starting_chips`
-- 使用 `/poker_launch` 打开内嵌 App，或点击 `Open Table`
+- 点击牌桌消息里的 `Open Poker App`，或使用 `/poker_launch` 打开内嵌 App
 - 在网站里点击 `Join This Table` 入座，然后开局、看自己的手牌、下注
 - `/poker_link` 获取外部牌桌链接
 
 线下模式：
 
 - `/poker_offline_create small_blind big_blind starting_chips`
-- 使用 `/poker_launch` 打开内嵌 App，或点击 `Open Table`
+- 点击牌桌消息里的 `Open Poker App`，或使用 `/poker_launch` 打开内嵌 App
 - 在网站上入座、调整座位、开始游戏、记录下注、录入公共牌/玩家手牌、摊牌或手动发奖
 
 统计和状态：
@@ -115,7 +115,7 @@ bot 启动后会同时启动 web 服务：
 http://127.0.0.1:8765
 ```
 
-部署到云服务后，把 `POKER_PUBLIC_BASE_URL` 设置为真实 HTTPS 地址，Discord 里的 `Open Table` 会自动使用公网链接。然后在 Discord Developer Portal 的 OAuth2 Redirects 加入：
+部署到云服务后，把 `POKER_PUBLIC_BASE_URL` 设置为真实 HTTPS 地址，Discord 里的 `Browser Backup` 会使用公网链接。真正的 Discord 内嵌体验应该点击 `Open Poker App`。然后在 Discord Developer Portal 的 OAuth2 Redirects 加入：
 
 ```text
 https://你的域名/oauth/callback

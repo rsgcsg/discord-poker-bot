@@ -1,6 +1,6 @@
 # Cloud Deployment
 
-这个项目适合部署为一个长期运行的云服务：同一个进程同时运行 Discord bot 和外部 web 牌桌。部署完成后，Discord 消息里的 `Open Table` 会指向真实 HTTPS 网址。
+这个项目适合部署为一个长期运行的云服务：同一个进程同时运行 Discord bot 和 web 牌桌。部署完成后，Discord 消息里的 `Open Poker App` 会启动内嵌 Activity；`Browser Backup` 才是普通 HTTPS 网页链接。
 
 ## 推荐部署方式
 
@@ -167,9 +167,9 @@ docker run -d \
 4. URL Mapping 指向你的公网域名，例如 `https://discord-poker-bot-production.up.railway.app`。
 5. 确保 OAuth2 Redirects 仍然包含 `https://你的域名/oauth/callback`。
 6. 重新部署并同步 slash commands。
-7. 在 Discord 里使用 `/poker_launch`，它会调用 Discord 的 Activity launch response。
+7. 在 Discord 里使用 `/poker_launch`，或点击牌桌消息里的 `Open Poker App`，它会调用 Discord 的 Activity launch response。
 
-如果 `/poker_launch` 报错，通常是这个 Application 还没有启用 Activities，或者当前频道/客户端不支持启动 Activity。此时仍可用 `Open Table` 单网址方式测试完整游戏流程。
+如果 `/poker_launch` 或 `Open Poker App` 报错，通常是这个 Application 还没有启用 Activities，或者当前频道/客户端不支持启动 Activity。此时仍可用 `Browser Backup` 单网址方式测试完整游戏流程。
 
 ## 生产注意事项
 

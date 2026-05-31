@@ -79,8 +79,8 @@
 
 ## Data Flow
 
-1. Discord command 创建 table，并回复 `Open Table` 链接。
-2. 玩家通过 `/poker_launch` 打开 Discord Activity，或点击牌桌链接。
+1. Discord command 创建 table，并回复带 `Open Poker App` Activity 按钮的消息。
+2. 玩家点击 `Open Poker App` 或通过 `/poker_launch` 打开 Discord Activity。
 3. Activity 打开 `/` lobby，前端用 Embedded App SDK 自动认证；浏览器模式可走 `/login` fallback。
 4. lobby 轮询 `/api/lobby` 显示 live tables。
 5. 玩家进入牌桌并在网站内 `Join This Table` 入座。

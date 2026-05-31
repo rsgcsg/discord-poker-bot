@@ -46,14 +46,14 @@ POKER_PUBLIC_BASE_URL=https://你的域名
 1. 部署云服务。
 2. 打开 `https://你的域名/healthz`，确认返回 `ok: true`。
 3. Discord 中执行 `/poker_online_create`。
-4. 玩家执行 `/poker_launch` 启动内嵌 App，或点击 `Open Table`。
+4. 玩家点击牌桌消息里的 `Open Poker App`，或执行 `/poker_launch` 启动内嵌 App。
 5. Activity lobby 自动登录 Discord 并显示 live tables。
 6. 玩家打开牌桌，在网站内点击 `Join This Table` 入座。
 7. 入座后开始牌局，只有当前登录玩家能看到自己的手牌和合法动作。
 
 ## Notes
 
-- 如果 `/poker_launch` 报错，先确认 Developer Portal 已启用 Activities，并且当前 Discord 客户端/频道支持 Activity。
+- 如果 `/poker_launch` 或 `Open Poker App` 报错，先确认 Developer Portal 已启用 Activities，并且当前 Discord 客户端/频道支持 Activity。
 - 如果 OAuth 回调失败，检查 Redirect URI 是否和云平台域名完全一致。
 - 当前 session 在单进程内存里；多实例部署前需要 Redis/Postgres session 和 live table 状态。
 - 前端已接入 Discord Embedded App SDK 的 `authorize()` / `authenticate()`，并调用后端 `/api/token`。浏览器里不在 Activity 环境时会显示 OAuth fallback。

@@ -171,7 +171,7 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - 云平台设置了固定 `POKER_SESSION_SECRET`。
 - `/healthz` 返回成功。
 - Discord slash commands 已同步。
-- `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Table` 链接。
+- `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Poker App` Activity 按钮。
 - `/poker_launch` 在启用 Activities 后能启动 Discord 内嵌 App。
 - Discord 内没有 `Call` / `Raise` / `Fold` / `Start Hand` 流程按钮。
 - 外部页面能打开并自动刷新。
