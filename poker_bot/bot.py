@@ -222,9 +222,7 @@ class PokerBot(commands.Bot):
                 self.runtime.config.discord_guild_id,
             )
         else:
-            print("Skipped global command sync to avoid Discord Activity Entry Point command conflict.")
-
-            logger.info("Synced %s global Discord slash commands", len(commands))
+            logger.info("Skipped global Discord slash command sync.")
 
     async def close(self) -> None:
         await self.runtime.web_server.stop()
