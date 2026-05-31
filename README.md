@@ -134,7 +134,10 @@ https://你的域名/oauth/callback
 - `poker_bot/app.py`：组装配置、统计、牌桌注册表、web server 和 Discord bot。
 - `poker_bot/bot.py`：Discord 创建/启动/链接/统计指令。
 - `poker_bot/web_server.py`：外部牌桌页面和公开 API。
+- `poker_bot/table_views.py`：API 返回的安全牌桌视图和手牌可见性控制。
 - `poker_bot/table_renderer.py`：生成牌桌 PNG。
+- `poker_bot/runtime_types.py`：跨 adapter 使用的运行时 Protocol 类型。
+- `poker_bot/urls.py`：公共 URL 生成。
 - `poker_bot/game.py`：德州扑克状态机。
 - `poker_bot/evaluator.py`：牌型比较。
 - `poker_bot/cards.py`：牌、牌组和牌面解析。

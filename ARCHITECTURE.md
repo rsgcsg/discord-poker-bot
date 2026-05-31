@@ -47,6 +47,9 @@
 - `poker_bot/registry.py`
 - `poker_bot/storage.py`
 - `poker_bot/sync.py`
+- `poker_bot/table_views.py`
+- `poker_bot/urls.py`
+- `poker_bot/runtime_types.py`
 - `poker_bot/app.py`
 
 职责：
@@ -55,6 +58,8 @@
 - 管理 live tables
 - 记录统计
 - 发布同步事件
+- 生成安全的 API 视图和公共 URL
+- 定义 adapter 之间共享的 Protocol 类型
 - 组装运行时依赖
 
 ## Adapters

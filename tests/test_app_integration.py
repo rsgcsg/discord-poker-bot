@@ -8,7 +8,7 @@ from poker_bot.registry import TableRegistry
 from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
 from poker_bot.game import Action, Phase
-from poker_bot.web_server import serialize_public_table, serialize_viewer_table
+from poker_bot.table_views import serialize_public_table, serialize_viewer_table
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):

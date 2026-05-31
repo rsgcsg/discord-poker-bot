@@ -7,13 +7,14 @@ from discord import app_commands
 from discord.ext import commands
 
 from .game import PokerTable
-from .web_server import table_url
+from .runtime_types import PokerRuntimeProtocol
+from .urls import table_url
 
 
 logger = logging.getLogger(__name__)
 
 
-def table_embed(runtime: object, table: PokerTable, title: str = "Texas Hold'em") -> discord.Embed:
+def table_embed(runtime: PokerRuntimeProtocol, table: PokerTable, title: str = "Texas Hold'em") -> discord.Embed:
     color = discord.Color.green() if table.hand_running else discord.Color.gold()
     summary = table.table_summary()
     if len(summary) > 700:
@@ -29,7 +30,7 @@ def is_unsupported_activity_platform(error: Exception) -> bool:
     return isinstance(error, discord.HTTPException) and getattr(error, "code", None) == 50231
 
 
-def launch_error_message(runtime: object, table: PokerTable | None, error: Exception) -> str:
+def launch_error_message(runtime: PokerRuntimeProtocol, table: PokerTable | None, error: Exception) -> str:
     if is_unsupported_activity_platform(error):
         message = (
             "Error: this Discord client platform is not enabled for the Poker Activity. "
@@ -62,7 +63,7 @@ async def send_error(interaction: discord.Interaction, error: Exception) -> None
 
 
 async def launch_activity_for_table(
-    runtime: object,
+    runtime: PokerRuntimeProtocol,
     interaction: discord.Interaction,
     table: PokerTable | None = None,
 ) -> None:
@@ -75,7 +76,7 @@ async def launch_activity_for_table(
 
 
 async def publish_table(
-    runtime: object,
+    runtime: PokerRuntimeProtocol,
     interaction: discord.Interaction,
     table: PokerTable,
     message: str | None = None,
@@ -88,7 +89,7 @@ async def publish_table(
 
 
 class SeatingView(discord.ui.View):
-    def __init__(self, runtime: object, table: PokerTable) -> None:
+    def __init__(self, runtime: PokerRuntimeProtocol, table: PokerTable) -> None:
         super().__init__(timeout=None)
         self.runtime = runtime
         self.table = table
@@ -106,7 +107,7 @@ class SeatingView(discord.ui.View):
 
 
 class PokerCog(commands.Cog):
-    def __init__(self, runtime: object) -> None:
+    def __init__(self, runtime: PokerRuntimeProtocol) -> None:
         self.runtime = runtime
 
     @app_commands.command(name="poker_online_create", description="Create an online Texas Hold'em table.")
@@ -216,7 +217,7 @@ class PokerCog(commands.Cog):
 
 
 class PokerBot(commands.Bot):
-    def __init__(self, runtime: object) -> None:
+    def __init__(self, runtime: PokerRuntimeProtocol) -> None:
         intents = discord.Intents.default()
         super().__init__(command_prefix="!", intents=intents)
         self.runtime = runtime
@@ -241,5 +242,5 @@ class PokerBot(commands.Bot):
         await super().close()
 
 
-def create_bot(runtime: object) -> PokerBot:
+def create_bot(runtime: PokerRuntimeProtocol) -> PokerBot:
     return PokerBot(runtime)

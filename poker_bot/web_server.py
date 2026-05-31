@@ -6,48 +6,28 @@ import hmac
 import json
 import logging
 import secrets
-import time
 from urllib.parse import urlencode
+from typing import TypedDict
 
 from aiohttp import ClientSession
 from aiohttp import web
 
 from .config import AppConfig
-from .game import Action
+from .game import Action, PokerTable
 from .registry import TableRegistry
 from .table_renderer import render_table
+from .table_views import serialize_viewer_table
 
 
 logger = logging.getLogger(__name__)
 DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@2.5.0/es2022/embedded-app-sdk.bundle.mjs"
 
 
-def serialize_public_table(registry: TableRegistry, table_id: str) -> dict[str, object]:
-    return serialize_table(registry, table_id)
-
-
-def serialize_viewer_table(registry: TableRegistry, table_id: str, viewer_id: int | None) -> dict[str, object]:
-    return serialize_table(registry, table_id, viewer_id)
-
-
-def serialize_table(registry: TableRegistry, table_id: str, viewer_id: int | None = None) -> dict[str, object]:
-    table = registry.get_by_public_id(table_id)
-    table.expire_if_needed()
-    data = table.snapshot()
-    current = table.players.get(table.current_user_id) if table.current_user_id else None
-    roles = table.seat_roles()
-    data["current_player_name"] = current.name if current else None
-    data["viewer_id"] = viewer_id
-    data["viewer_is_seated"] = viewer_id in table.players if viewer_id else False
-    data["viewer_legal_actions"] = table.legal_actions_for(viewer_id) if data["viewer_is_seated"] else []
-    data["seconds_until_timeout"] = max(0, int(table.hand_timeout_seconds - (time.time() - table.last_action_at))) if table.hand_running else None
-    for player in data["players"]:
-        player["roles"] = roles.get(player["user_id"], [])
-        source = table.players[player["user_id"]]
-        can_view_hole = viewer_id == source.user_id or table.phase.value == "finished"
-        player["hole_cards"] = [card.label() for card in source.hole] if can_view_hole else []
-        player["offline_cards"] = [card.label() for card in source.offline_cards]
-    return data
+class UserSession(TypedDict, total=False):
+    user_id: int
+    username: str
+    avatar: object
+    exp: int
 
 
 def _safe_next_path(value: str | None) -> str:
@@ -322,20 +302,20 @@ HTML = """
 
           <div class="float-window dealer-window controls draggable-window" id="tableControls" data-window-id="tableActions">
             <h2 class="panel-title drag-handle" data-drag-handle>Table Actions</h2>
-            <button class="primary" id="startButton" onclick="postTableAction('start')">Start Hand</button>
+            <button class="primary" id="startButton" data-table-action="start">Start Hand</button>
             <div class="grid2">
               <input id="seatNumber" type="number" min="1" placeholder="Seat">
-              <button onclick="postSeatMove()">Move My Seat</button>
+              <button data-control-action="seatMove">Move My Seat</button>
             </div>
             <div id="offlineControls">
               <input id="boardCards" placeholder="Board: Ah Kd Qs 7c 2h">
-              <button onclick="postOfflineBoard()">Set Board</button>
+              <button data-control-action="offlineBoard">Set Board</button>
               <select id="cardPlayer"></select>
               <input id="holeCards" placeholder="Player cards: As Ad">
-              <button onclick="postOfflineCards()">Set Player Cards</button>
+              <button data-control-action="offlineCards">Set Player Cards</button>
               <select id="actor"></select>
-              <button onclick="postTableAction('showdown')">Showdown</button>
-              <button onclick="postManualAward()">Manual Award To Selected Player</button>
+              <button data-table-action="showdown">Showdown</button>
+              <button data-control-action="manualAward">Manual Award To Selected Player</button>
             </div>
             <div id="message" class="message"></div>
           </div>
@@ -371,6 +351,14 @@ HTML = """
     let activityAuthAttempted = false;
     let activityAuthRunning = false;
     let activityAuthFailed = false;
+
+    authPanel.addEventListener('click', event => {
+      const target = event.target.closest('[data-auth-action]');
+      if (!target) return;
+      if (target.dataset.authAction === 'retry') {
+        startDiscordActivityAuth(target.dataset.clientId || (latest && latest.activity_client_id) || '');
+      }
+    });
 
     const tableFactObjects = [
       { label: 'Game', value: data => `${data.mode.toUpperCase()} Texas Hold'em` },
@@ -480,6 +468,32 @@ HTML = """
       } else if (action === 'leave') {
         postLeave();
       }
+    });
+
+    tableControls.addEventListener('click', event => {
+      const tableAction = event.target.closest('[data-table-action]');
+      if (tableAction) {
+        postTableAction(tableAction.dataset.tableAction);
+        return;
+      }
+      const control = event.target.closest('[data-control-action]');
+      if (!control) return;
+      const action = control.dataset.controlAction;
+      if (action === 'seatMove') {
+        postSeatMove();
+      } else if (action === 'offlineBoard') {
+        postOfflineBoard();
+      } else if (action === 'offlineCards') {
+        postOfflineCards();
+      } else if (action === 'manualAward') {
+        postManualAward();
+      }
+    });
+
+    actionButtons.addEventListener('click', event => {
+      const button = event.target.closest('[data-player-action]');
+      if (!button) return;
+      postPlayerAction(button.dataset.playerAction);
     });
 
     function text(value) {
@@ -605,7 +619,7 @@ HTML = """
         const button = document.createElement('button');
         button.textContent = definition.label;
         if (definition.className) button.className = definition.className;
-        button.onclick = () => postPlayerAction(action);
+        button.dataset.playerAction = action;
         actionButtons.appendChild(button);
       }
     }
@@ -933,7 +947,7 @@ LOBBY_HTML = """
       authPanel.innerHTML = `
         <h2>Discord Sign In</h2>
         ${status}
-        <button onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Retry Discord Authorization</button>
+        <button data-auth-action="retry" data-client-id="${html(data.activity_client_id || '')}">Retry Discord Authorization</button>
         <a class="button secondary" href="/login">Browser Backup</a>
       `;
     }
@@ -1013,7 +1027,7 @@ class PokerWebServer:
     def __init__(self, registry: TableRegistry, config: AppConfig) -> None:
         self.registry = registry
         self.config = config
-        self.sessions: dict[str, dict[str, object]] = {}
+        self.sessions: dict[str, UserSession] = {}
         self.oauth_states: dict[str, str] = {}
         self.launch_targets: dict[int, int] = {}
         self.discord_sdk_source: str | None = None
@@ -1327,19 +1341,19 @@ class PokerWebServer:
         response.del_cookie("poker_session")
         raise response
 
-    def current_user(self, request: web.Request) -> dict[str, object] | None:
+    def current_user(self, request: web.Request) -> UserSession | None:
         session_id = request.cookies.get("poker_session", "")
         if session_id in self.sessions:
             return self.sessions[session_id]
         return self.decode_session(session_id)
 
-    def require_user(self, request: web.Request) -> dict[str, object]:
+    def require_user(self, request: web.Request) -> UserSession:
         user = self.current_user(request)
         if user is None:
             raise ValueError("Log in with Discord first.")
         return user
 
-    def require_seated(self, table: object, user_id: int) -> None:
+    def require_seated(self, table: PokerTable, user_id: int) -> None:
         if user_id not in table.players:
             raise ValueError("Join this table before playing.")
 
@@ -1354,14 +1368,14 @@ class PokerWebServer:
         self.sessions[session_id] = payload
         return session_id
 
-    def encode_session(self, payload: dict[str, object]) -> str:
+    def encode_session(self, payload: UserSession) -> str:
         body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         encoded = base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
         signature = hmac.new(self.cookie_secret(), encoded.encode("ascii"), hashlib.sha256).digest()
         signed = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
         return f"v1.{encoded}.{signed}"
 
-    def decode_session(self, value: str) -> dict[str, object] | None:
+    def decode_session(self, value: str) -> UserSession | None:
         try:
             version, encoded, signed = value.split(".", 2)
             if version != "v1":
@@ -1395,8 +1409,3 @@ class PokerWebServer:
 
     def set_launch_target(self, user_id: int, table_id: int) -> None:
         self.launch_targets[user_id] = table_id
-
-
-def table_url(config: AppConfig, table: object) -> str:
-    channel_id = getattr(table, "channel_id")
-    return f"{config.public_base_url}/table/{channel_id}"

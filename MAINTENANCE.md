@@ -19,8 +19,11 @@ Application:
 - `poker_bot/storage.py`
 - `poker_bot/sync.py`
 - `poker_bot/config.py`
+- `poker_bot/table_views.py`
+- `poker_bot/urls.py`
+- `poker_bot/runtime_types.py`
 
-这里负责运行时组装、live table 管理、统计和同步事件。
+这里负责运行时组装、live table 管理、统计、同步事件、API 视图、公共 URL 和跨 adapter 类型边界。
 
 Adapters:
 
