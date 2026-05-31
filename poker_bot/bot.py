@@ -222,7 +222,18 @@ class PokerBot(commands.Bot):
                 self.runtime.config.discord_guild_id,
             )
         else:
-            commands = await self.tree.sync()
+            try:
+                commands = await self.tree.sync()
+                print(f"Synced {len(commands)} global command(s)")
+            except discord.HTTPException as exc:
+                if exc.code == 50240:
+                    print(
+                        "Skipped global command sync because Discord Activity Entry Point command exists. "
+                        "Existing slash commands will continue to work."
+                    )
+                else:
+                    raise
+                
             logger.info("Synced %s global Discord slash commands", len(commands))
 
     async def close(self) -> None:
