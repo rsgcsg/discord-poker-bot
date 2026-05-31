@@ -103,6 +103,7 @@ POKER_WEB_PORT=8765
 POKER_PUBLIC_BASE_URL=http://127.0.0.1:8765
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
+POKER_SESSION_SECRET=...
 ```
 
 云上：
@@ -114,6 +115,7 @@ POKER_PUBLIC_BASE_URL=https://你的真实公网域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
+POKER_SESSION_SECRET=...
 ```
 
 平台如果提供 `PORT`，程序会自动使用它。
@@ -145,7 +147,9 @@ Web smoke test 可参考测试中的 `PokerWebServer` 用法，至少验证：
 - `/healthz`
 - `/api/tables/<id>`
 - `/api/tables/<id>/image`
+- `/api/lobby`
 - `/api/token` 用于 Activity SDK code exchange
+- `/assets/discord-sdk.mjs`
 - `/login` 会跳转到 Discord OAuth 授权页
 
 Docker 验证：
@@ -164,6 +168,7 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 - `POKER_PUBLIC_BASE_URL` 是真实 HTTPS 地址。
 - Discord Developer Portal 的 OAuth2 Redirects 包含 `https://你的域名/oauth/callback`。
 - 云平台设置了 `DISCORD_CLIENT_ID` 和 `DISCORD_CLIENT_SECRET`。
+- 云平台设置了固定 `POKER_SESSION_SECRET`。
 - `/healthz` 返回成功。
 - Discord slash commands 已同步。
 - `/poker_online_create` 和 `/poker_offline_create` 都能发出 `Open Table` 链接。
@@ -197,7 +202,7 @@ docker run --env-file .env -p 8765:8765 discord-poker-bot
 
 ## 已知限制
 
-- 登录 session 存在当前进程内存，服务重启会失效。
+- 登录 session 是签名 cookie；如果更换 `POKER_SESSION_SECRET`、`DISCORD_CLIENT_SECRET` 或 bot token，旧 session 会失效。
 - live table 不是持久化状态。
 - 当前不支持多实例。
 

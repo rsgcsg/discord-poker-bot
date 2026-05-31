@@ -81,11 +81,12 @@
 
 1. Discord command 创建 table，并回复 `Open Table` 链接。
 2. 玩家通过 `/poker_launch` 打开 Discord Activity，或点击牌桌链接。
-3. Activity 内前端用 Embedded App SDK 自动认证；浏览器模式可走 `/login` fallback。
-4. 玩家在网站内 `Join This Table` 入座。
-5. 页面轮询 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image`；服务端用 session 决定是否显示自己的手牌。
-6. 页面 POST 到 web API 来入座、开始牌局、下注、调座位、录入线下牌面和摊牌。
-7. `TableRegistry` 发布同步事件，必要时写入统计。
+3. Activity 打开 `/` lobby，前端用 Embedded App SDK 自动认证；浏览器模式可走 `/login` fallback。
+4. lobby 轮询 `/api/lobby` 显示 live tables。
+5. 玩家进入牌桌并在网站内 `Join This Table` 入座。
+6. 页面轮询 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image`；服务端用签名 session 决定是否显示自己的手牌。
+7. 页面 POST 到 web API 来入座、开始牌局、下注、调座位、录入线下牌面和摊牌。
+8. `TableRegistry` 发布同步事件，必要时写入统计。
 
 ## Extension Points
 
@@ -99,6 +100,7 @@ Discord 内嵌 App：
 - `/poker_launch` 使用 Discord interaction 的 `launch_activity` response。
 - Developer Portal 需要启用 Activities 并配置 URL Mapping 到公网域名。
 - Activity 内使用 Embedded App SDK `authorize()` / `/api/token` / `authenticate()` 自动登录；普通浏览器保留 OAuth2 redirect fallback。
+- `poker_session` 是签名 cookie，固定 `POKER_SESSION_SECRET` 后可跨 redeploy 保留登录态。
 
 多实例部署：
 

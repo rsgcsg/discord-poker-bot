@@ -21,6 +21,7 @@ POKER_PUBLIC_BASE_URL=https://你的真实公网域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
 DISCORD_CLIENT_ID=你的ApplicationID
 DISCORD_CLIENT_SECRET=你的OAuth2ClientSecret
+POKER_SESSION_SECRET=一串长随机字符串
 ```
 
 `DISCORD_TOKEN` 只填 Bot 页面的 token 本体，不要加引号，不要加 `Bot ` 前缀。如果日志出现 `Improper token has been passed` 或 `401 Unauthorized`，说明云平台里的 token 无效或已被重置，需要重新复制 token 并 redeploy。
@@ -82,6 +83,7 @@ Environment variables:
 DISCORD_TOKEN=...
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
+POKER_SESSION_SECRET=...
 DISCORD_GUILD_ID=你的测试服务器ID
 POKER_PUBLIC_BASE_URL=https://你的云平台域名
 POKER_DB_PATH=/data/poker_stats.sqlite3
@@ -107,13 +109,13 @@ Mount path: /data
 Railway:
 
 - 新建 service，选择 GitHub repo 或 Dockerfile。
-- 设置 `DISCORD_TOKEN`、`DISCORD_CLIENT_ID`、`DISCORD_CLIENT_SECRET` 和 `POKER_PUBLIC_BASE_URL`。
+- 设置 `DISCORD_TOKEN`、`DISCORD_CLIENT_ID`、`DISCORD_CLIENT_SECRET`、`POKER_SESSION_SECRET` 和 `POKER_PUBLIC_BASE_URL`。
 - 如果要保留统计，添加 volume 并挂载到 `/data`。
 
 Fly.io:
 
 - 使用 Dockerfile 部署。
-- 设置 secret：`fly secrets set DISCORD_TOKEN=... DISCORD_CLIENT_ID=... DISCORD_CLIENT_SECRET=... POKER_PUBLIC_BASE_URL=https://...`
+- 设置 secret：`fly secrets set DISCORD_TOKEN=... DISCORD_CLIENT_ID=... DISCORD_CLIENT_SECRET=... POKER_SESSION_SECRET=... POKER_PUBLIC_BASE_URL=https://...`
 - 给 `/data` 配置 volume。
 
 Render:
@@ -134,6 +136,7 @@ docker run -d \
   -e DISCORD_TOKEN=... \
   -e DISCORD_CLIENT_ID=... \
   -e DISCORD_CLIENT_SECRET=... \
+  -e POKER_SESSION_SECRET=... \
   -e POKER_PUBLIC_BASE_URL=https://你的域名 \
   -e POKER_DB_PATH=/data/poker_stats.sqlite3 \
   -v poker-data:/data \
@@ -148,6 +151,7 @@ docker run -d \
 
 - Bot token 设置到了云平台环境变量。
 - OAuth2 Client ID 和 Client Secret 设置到了云平台环境变量。
+- `POKER_SESSION_SECRET` 设置到了云平台环境变量。
 - OAuth2 Redirects 包含 `https://你的域名/oauth/callback`。
 - token 来自 `Bot` 页面，不是 Application ID、Client Secret 或 Public Key。
 - 邀请链接包含 `bot` 和 `applications.commands` scope。
@@ -174,5 +178,5 @@ docker run -d \
 - 当前 live table 在内存中，服务重启会清空当前牌桌。
 - SQLite 只适合单实例部署；多实例需要共享状态和数据库迁移。
 - 网站动作需要 Discord 登录；未入座用户不能看自己的手牌或操作。
-- session 目前保存在单进程内存中，重启会要求玩家重新登录。
+- session 使用签名 cookie；如果没有固定 `POKER_SESSION_SECRET`，换 token 或 secret 后玩家需要重新登录。
 - 部署多个实例前，需要先设计 Redis/Postgres 状态层。

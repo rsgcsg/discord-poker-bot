@@ -18,6 +18,7 @@ class AppConfig:
     discord_client_id: str = ""
     discord_client_secret: str = ""
     discord_redirect_uri: str = ""
+    session_secret: str = ""
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -37,6 +38,7 @@ class AppConfig:
             discord_client_id=_clean_secret(os.getenv("DISCORD_CLIENT_ID", "")),
             discord_client_secret=_clean_secret(os.getenv("DISCORD_CLIENT_SECRET", "")),
             discord_redirect_uri=os.getenv("DISCORD_REDIRECT_URI", f"{public_base_url}/oauth/callback").strip(),
+            session_secret=_clean_secret(os.getenv("POKER_SESSION_SECRET", "")),
         )
 
 

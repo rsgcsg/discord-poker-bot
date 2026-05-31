@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
-import html as html_lib
 import secrets
 import time
 from urllib.parse import urlencode
@@ -16,6 +19,7 @@ from .table_renderer import render_table
 
 
 logger = logging.getLogger(__name__)
+DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@2.5.0/es2022/embedded-app-sdk.bundle.mjs"
 
 
 def serialize_public_table(registry: TableRegistry, table_id: str) -> dict[str, object]:
@@ -494,7 +498,7 @@ HTML = """
       activityAuthFailed = false;
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
-        const { DiscordSDK } = await import('https://esm.sh/@discord/embedded-app-sdk@1.10.0');
+        const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
         const discordSdk = new DiscordSDK(clientId);
         await withTimeout(discordSdk.ready(), 4000);
         const { code } = await discordSdk.commands.authorize({
@@ -536,12 +540,247 @@ HTML = """
 """
 
 
+LOBBY_HTML = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discord Poker</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1118;
+      --panel: #111b26;
+      --line: #26384a;
+      --text: #edf4f8;
+      --muted: #9fb0bd;
+      --gold: #efd074;
+      --green: #1c7a52;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #182636 0, var(--bg) 54%);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    main {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(10, 16, 23, .86);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+    h1 { margin: 0; font-size: 22px; }
+    .status {
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+    .content {
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      max-width: 980px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(17, 27, 38, .9);
+      padding: 16px;
+    }
+    .tables {
+      display: grid;
+      gap: 12px;
+    }
+    .table {
+      border: 1px solid var(--line);
+      background: #101a25;
+      padding: 14px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    h2, h3 { margin: 0; }
+    h2 { color: var(--gold); font-size: 16px; }
+    h3 { font-size: 17px; }
+    p { margin: 6px 0 0; color: var(--muted); }
+    a.button, button {
+      min-height: 38px;
+      border: 1px solid #35a673;
+      background: var(--green);
+      color: var(--text);
+      padding: 9px 12px;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      text-align: center;
+      cursor: pointer;
+    }
+    .secondary {
+      background: #203246;
+      border-color: #4b657e;
+    }
+    .message { color: var(--gold); }
+    @media (max-width: 680px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .table { grid-template-columns: 1fr; }
+      .status { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Discord Poker</h1>
+      <div class="status" id="viewer">Connecting</div>
+    </header>
+    <section class="content">
+      <div class="panel" id="authPanel"></div>
+      <div class="panel">
+        <h2>Live Tables</h2>
+        <div class="tables" id="tables"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const viewer = document.getElementById('viewer');
+    const authPanel = document.getElementById('authPanel');
+    const tables = document.getElementById('tables');
+    let latest = null;
+    let activityAuthAttempted = false;
+    let activityAuthRunning = false;
+    let activityAuthFailed = false;
+
+    function text(value) {
+      return value === null || value === undefined || value === '' ? '-' : String(value);
+    }
+
+    function html(value) {
+      return text(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[char]));
+    }
+
+    function render(data) {
+      latest = data;
+      viewer.textContent = data.authenticated ? data.viewer_name : 'Not signed in';
+      renderAuthPanel(data);
+      tables.innerHTML = data.tables.map(table => `
+        <div class="table">
+          <div>
+            <h3>${table.mode.toUpperCase()} Table ${table.channel_id}</h3>
+            <p>${table.players.length} players - ${table.phase} - blinds ${table.small_blind}/${table.big_blind}</p>
+          </div>
+          <a class="button" href="/table/${table.channel_id}">Open</a>
+        </div>
+      `).join('') || '<p>No live tables yet. Create one with /poker_online_create or /poker_offline_create.</p>';
+      if (!data.authenticated && !activityAuthAttempted && data.activity_client_id) {
+        startDiscordActivityAuth(data.activity_client_id);
+      }
+    }
+
+    function renderAuthPanel(data) {
+      if (data.authenticated) {
+        authPanel.innerHTML = `<h2>Ready</h2><p>Signed in as <strong>${html(data.viewer_name)}</strong>. Open a table and join from there.</p>`;
+        return;
+      }
+      const status = activityAuthRunning
+        ? '<p class="message">Connecting with Discord...</p>'
+        : activityAuthFailed
+          ? '<p class="message">Discord Activity login was not available here. Use browser fallback only outside Discord.</p>'
+          : '<p class="message">Inside Discord, this app signs in automatically.</p>';
+      authPanel.innerHTML = `
+        <h2>Discord Sign In</h2>
+        ${status}
+        <button onclick="startDiscordActivityAuth('${data.activity_client_id || ''}')">Continue in Discord</button>
+        <a class="button secondary" href="/login">Browser Login Fallback</a>
+      `;
+    }
+
+    async function refresh() {
+      const response = await fetch('/api/lobby', { cache: 'no-store' });
+      if (!response.ok) throw new Error(await response.text());
+      render(await response.json());
+    }
+
+    async function startDiscordActivityAuth(clientId) {
+      if (!clientId || activityAuthRunning) return;
+      activityAuthAttempted = true;
+      activityAuthRunning = true;
+      activityAuthFailed = false;
+      renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
+      try {
+        const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
+        const discordSdk = new DiscordSDK(clientId);
+        await withTimeout(discordSdk.ready(), 5000);
+        const { code } = await discordSdk.commands.authorize({
+          client_id: clientId,
+          response_type: 'code',
+          state: '',
+          prompt: 'none',
+          scope: ['identify'],
+        });
+        const tokenResponse = await fetch('/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok) throw new Error(tokenData.error || 'Discord token exchange failed');
+        await discordSdk.commands.authenticate({ access_token: tokenData.access_token });
+        activityAuthRunning = false;
+        await refresh();
+      } catch (error) {
+        activityAuthRunning = false;
+        activityAuthFailed = true;
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
+      }
+    }
+
+    function withTimeout(promise, ms) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
+      ]);
+    }
+
+    refresh().catch(error => {
+      viewer.textContent = 'Disconnected';
+      authPanel.innerHTML = `<p class="message">${html(error.message)}</p>`;
+    });
+    setInterval(() => refresh().catch(() => {}), 3000);
+  </script>
+</body>
+</html>
+"""
+
+
 class PokerWebServer:
     def __init__(self, registry: TableRegistry, config: AppConfig) -> None:
         self.registry = registry
         self.config = config
         self.sessions: dict[str, dict[str, object]] = {}
         self.oauth_states: dict[str, str] = {}
+        self.discord_sdk_source: str | None = None
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
 
@@ -552,8 +791,10 @@ class PokerWebServer:
         app.router.add_get("/login", self.login)
         app.router.add_get("/oauth/callback", self.oauth_callback)
         app.router.add_get("/logout", self.logout)
+        app.router.add_get("/assets/discord-sdk.mjs", self.discord_sdk_asset)
         app.router.add_get("/table/{table_id}", self.table_page)
         app.router.add_post("/api/token", self.activity_token)
+        app.router.add_get("/api/lobby", self.lobby_api)
         app.router.add_get("/api/tables", self.tables_api)
         app.router.add_get("/api/tables/{table_id}", self.table_api)
         app.router.add_get("/api/tables/{table_id}/image", self.table_image)
@@ -576,44 +817,33 @@ class PokerWebServer:
             await self.runner.cleanup()
 
     async def index(self, request: web.Request) -> web.Response:
-        user = self.current_user(request)
-        rows = [
-            f'<li><a href="/table/{table.channel_id}">Table {table.channel_id} ({table.mode})</a></li>'
-            for table in self.registry.tables()
-        ]
-        auth = (
-            f'<p>Signed in as {html_lib.escape(str(user["username"]))}. <a href="/logout">Log out</a></p>'
-            if user
-            else '<p><a href="/login">Log in with Discord</a></p>'
-        )
-        list_html = "\n".join(rows) if rows else "<li>No live tables. Create one from Discord first.</li>"
-        body = f"""
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Texas Hold'em Tables</title>
-  <style>
-    body {{ margin: 0; min-height: 100vh; background: #0b1118; color: #edf4f8; font-family: Arial, Helvetica, sans-serif; padding: 32px; }}
-    a {{ color: #efd074; }}
-    li {{ margin: 12px 0; }}
-  </style>
-</head>
-<body>
-  <h1>Texas Hold'em Tables</h1>
-  {auth}
-  <ul>{list_html}</ul>
-</body>
-</html>
-"""
-        return web.Response(text=body, content_type="text/html")
+        return web.Response(text=LOBBY_HTML, content_type="text/html")
 
     async def healthz(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "tables": len(self.registry.tables())})
 
+    async def discord_sdk_asset(self, request: web.Request) -> web.Response:
+        if self.discord_sdk_source is None:
+            async with ClientSession() as session:
+                async with session.get(DISCORD_SDK_URL) as response:
+                    if response.status >= 400:
+                        raise web.HTTPBadGateway(text="Discord Embedded App SDK could not be loaded.")
+                    self.discord_sdk_source = await response.text()
+        return web.Response(text=self.discord_sdk_source, content_type="text/javascript")
+
     async def table_page(self, request: web.Request) -> web.Response:
         return web.Response(text=HTML, content_type="text/html")
+
+    async def lobby_api(self, request: web.Request) -> web.Response:
+        user = self.current_user(request)
+        return web.json_response(
+            {
+                "authenticated": user is not None,
+                "viewer_name": user["username"] if user else None,
+                "activity_client_id": self.config.discord_client_id,
+                "tables": [table.snapshot() for table in self.registry.tables()],
+            }
+        )
 
     async def tables_api(self, request: web.Request) -> web.Response:
         return web.json_response([table.snapshot() for table in self.registry.tables()])
@@ -855,7 +1085,9 @@ class PokerWebServer:
 
     def current_user(self, request: web.Request) -> dict[str, object] | None:
         session_id = request.cookies.get("poker_session", "")
-        return self.sessions.get(session_id)
+        if session_id in self.sessions:
+            return self.sessions[session_id]
+        return self.decode_session(session_id)
 
     def require_user(self, request: web.Request) -> dict[str, object]:
         user = self.current_user(request)
@@ -868,13 +1100,43 @@ class PokerWebServer:
             raise ValueError("Join this table before playing.")
 
     def create_session(self, user_data: dict[str, object]) -> str:
-        session_id = secrets.token_urlsafe(32)
-        self.sessions[session_id] = {
+        payload = {
             "user_id": int(user_data["id"]),
             "username": user_data.get("global_name") or user_data.get("username") or user_data["id"],
             "avatar": user_data.get("avatar"),
+            "exp": int(time.time()) + 60 * 60 * 24 * 14,
         }
+        session_id = self.encode_session(payload)
+        self.sessions[session_id] = payload
         return session_id
+
+    def encode_session(self, payload: dict[str, object]) -> str:
+        body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        encoded = base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+        signature = hmac.new(self.cookie_secret(), encoded.encode("ascii"), hashlib.sha256).digest()
+        signed = base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
+        return f"v1.{encoded}.{signed}"
+
+    def decode_session(self, value: str) -> dict[str, object] | None:
+        try:
+            version, encoded, signed = value.split(".", 2)
+            if version != "v1":
+                return None
+            expected = hmac.new(self.cookie_secret(), encoded.encode("ascii"), hashlib.sha256).digest()
+            actual = base64.urlsafe_b64decode(signed + "=" * (-len(signed) % 4))
+            if not hmac.compare_digest(expected, actual):
+                return None
+            raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+            payload = json.loads(raw.decode("utf-8"))
+            if int(payload.get("exp", 0)) < time.time():
+                return None
+            return payload
+        except Exception:
+            return None
+
+    def cookie_secret(self) -> bytes:
+        secret = self.config.session_secret or self.config.discord_client_secret or self.config.discord_token
+        return secret.encode("utf-8")
 
     def set_session_cookie(self, response: web.StreamResponse, session_id: str) -> None:
         is_https = self.config.public_base_url.startswith("https://")

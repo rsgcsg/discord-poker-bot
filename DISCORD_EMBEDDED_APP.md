@@ -6,8 +6,10 @@
 
 - `/poker_online_create` 和 `/poker_offline_create` 创建牌桌。
 - `/table/<table_id>` 是唯一牌桌 URL。
+- `/` 是 Discord Activity lobby，会自动授权并列出当前 live tables。
 - Activity 内自动使用 Embedded App SDK 登录。
 - `/api/token` 给 Embedded App SDK 使用：前端拿到 SDK `authorize()` 返回的 code 后，交给服务端换取 access token，同时建立网站 session。
+- `/assets/discord-sdk.mjs` 由服务端代理 Embedded App SDK，避免 Activity iframe 直接加载第三方脚本失败。
 - 浏览器 fallback 仍可通过 `/login` 使用 Discord OAuth2 `identify` 登录。
 - `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image` 根据服务端 session 只显示当前玩家自己的手牌。
 - `/api/tables/<table_id>/me/join` 和 `/api/tables/<table_id>/me/leave` 负责网站内入座/离座。
@@ -32,10 +34,12 @@ DISCORD_TOKEN=...
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
 DISCORD_REDIRECT_URI=https://你的域名/oauth/callback
+POKER_SESSION_SECRET=一串长随机字符串
 POKER_PUBLIC_BASE_URL=https://你的域名
 ```
 
 `DISCORD_REDIRECT_URI` 可以不填，默认就是 `POKER_PUBLIC_BASE_URL/oauth/callback`。
+`POKER_SESSION_SECRET` 用来签名登录 cookie，云上建议固定设置，避免每次 redeploy 后玩家重新授权。
 
 ## Test Flow
 
@@ -43,8 +47,8 @@ POKER_PUBLIC_BASE_URL=https://你的域名
 2. 打开 `https://你的域名/healthz`，确认返回 `ok: true`。
 3. Discord 中执行 `/poker_online_create`。
 4. 玩家执行 `/poker_launch` 启动内嵌 App，或点击 `Open Table`。
-5. Activity 内自动登录 Discord。
-6. 玩家在网站内点击 `Join This Table` 入座。
+5. Activity lobby 自动登录 Discord 并显示 live tables。
+6. 玩家打开牌桌，在网站内点击 `Join This Table` 入座。
 7. 入座后开始牌局，只有当前登录玩家能看到自己的手牌和合法动作。
 
 ## Notes

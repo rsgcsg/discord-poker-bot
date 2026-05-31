@@ -32,6 +32,8 @@ DISCORD_CLIENT_ID=你的ApplicationID
 DISCORD_CLIENT_SECRET=你的OAuth2ClientSecret
 # 可选：默认是 POKER_PUBLIC_BASE_URL/oauth/callback
 DISCORD_REDIRECT_URI=
+# 建议云上设置，保证登录授权 cookie 在 redeploy 后仍然有效
+POKER_SESSION_SECRET=一串长随机字符串
 POKER_DB_PATH=poker_stats.sqlite3
 POKER_WEB_HOST=127.0.0.1
 POKER_WEB_PORT=8765
@@ -100,7 +102,9 @@ bot 启动后会同时启动 web 服务：
 - 页面：`/table/<table_id>`
 - 登录：`/login`
 - OAuth 回调：`/oauth/callback`
+- Activity lobby API：`/api/lobby`
 - Embedded SDK token exchange：`/api/token`
+- Embedded SDK script proxy：`/assets/discord-sdk.mjs`
 - 状态 API：`/api/tables/<table_id>`，根据登录 session 自动决定是否显示自己的手牌
 - 高清牌桌图：`/api/tables/<table_id>/image`
 - 健康检查：`/healthz`
@@ -138,5 +142,5 @@ https://你的域名/oauth/callback
 - live table 仍保存在内存里，服务重启后需要重新开桌。
 - 统计保存在 SQLite；云上需要持久化磁盘。
 - 未登录或未入座用户不能看手牌、不能操作。
-- 登录 session 保存在内存中，服务重启后需要重新登录。
+- 登录 session 使用签名 cookie；设置 `POKER_SESSION_SECRET` 后 redeploy 不会强制重新登录。
 - 建议生产环境只运行一个实例；多实例需要 Redis/Postgres 等共享状态。

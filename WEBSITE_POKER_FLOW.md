@@ -35,7 +35,7 @@ URL:
 
 - 通过 Discord OAuth2 `identify` scope 取得 Discord user id。
 - Activity 内优先使用 Embedded App SDK `authorize()` / `/api/token` / `authenticate()` 自动登录。
-- 服务端建立 `poker_session` cookie。
+- 服务端建立签名 `poker_session` cookie；固定 `POKER_SESSION_SECRET` 后授权状态可跨 redeploy 保留。
 - 后续 `/api/tables/<table_id>` 和 `/api/tables/<table_id>/image` 自动按 session 决定可见信息。
 - 不再使用私人 token 链接。
 
@@ -132,7 +132,7 @@ Discord 不做：
 - Activity 内自动 Discord 登录。
 - Discord OAuth 登录。
 - 绑定 Discord user id。
-- 服务端 session。
+- 服务端签名 session。
 - 玩家动作必须由登录身份匹配 user id。
 
 后续生产增强：
