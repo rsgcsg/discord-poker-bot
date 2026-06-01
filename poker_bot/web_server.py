@@ -9,7 +9,7 @@ import secrets
 from urllib.parse import urlencode
 from typing import TypedDict
 
-from aiohttp import ClientSession
+from aiohttp import ClientResponse, ClientSession
 from aiohttp import web
 
 from .config import AppConfig
@@ -21,7 +21,7 @@ from .table_views import serialize_viewer_table
 
 logger = logging.getLogger(__name__)
 DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@2.5.0/es2022/embedded-app-sdk.bundle.mjs"
-APP_BUILD = "activity-auth-v3"
+APP_BUILD = "activity-auth-v4"
 NO_STORE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -340,7 +340,7 @@ HTML = """
     </main>
   </div>
   <script>
-    const APP_BUILD = "activity-auth-v3";
+    const APP_BUILD = "activity-auth-v4";
     const parts = window.location.pathname.split('/').filter(Boolean);
     const tableId = parts[1];
     const image = document.getElementById('tableImage');
@@ -591,7 +591,7 @@ HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Discord Activity login is not available in this window.${detail} Build: ${APP_BUILD}. Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
+      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     function updatePlayerSelects(data) {
@@ -775,14 +775,23 @@ HTML = """
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code }),
           });
-          const data = await response.json();
+          const data = await readJsonResponse(response);
           if (response.ok) return data;
-          lastError = new Error(data.error || 'Discord token exchange failed');
+          lastError = new Error(data.error || `Discord token exchange failed (${response.status})`);
         } catch (error) {
           lastError = error;
         }
       }
       throw lastError || new Error('Discord token exchange failed');
+    }
+
+    async function readJsonResponse(response) {
+      const responseText = await response.text();
+      try {
+        return responseText ? JSON.parse(responseText) : {};
+      } catch (error) {
+        return { error: responseText || `Request failed (${response.status})` };
+      }
     }
 
     setupDraggableWindows();
@@ -912,7 +921,7 @@ LOBBY_HTML = """
     </section>
   </main>
   <script>
-    const APP_BUILD = "activity-auth-v3";
+    const APP_BUILD = "activity-auth-v4";
     const viewer = document.getElementById('viewer');
     const authPanel = document.getElementById('authPanel');
     const tables = document.getElementById('tables');
@@ -992,7 +1001,7 @@ LOBBY_HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Discord Activity login is not available in this window.${detail} Build: ${APP_BUILD}. Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
+      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     async function startDiscordActivityAuth(clientId) {
@@ -1055,14 +1064,23 @@ LOBBY_HTML = """
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code }),
           });
-          const data = await response.json();
+          const data = await readJsonResponse(response);
           if (response.ok) return data;
-          lastError = new Error(data.error || 'Discord token exchange failed');
+          lastError = new Error(data.error || `Discord token exchange failed (${response.status})`);
         } catch (error) {
           lastError = error;
         }
       }
       throw lastError || new Error('Discord token exchange failed');
+    }
+
+    async function readJsonResponse(response) {
+      const responseText = await response.text();
+      try {
+        return responseText ? JSON.parse(responseText) : {};
+      } catch (error) {
+        return { error: responseText || `Request failed (${response.status})` };
+      }
     }
 
     refresh().catch(error => {
@@ -1340,12 +1358,12 @@ class PokerWebServer:
         async with ClientSession() as session:
             async with session.post("https://discord.com/api/oauth2/token", data=token_payload) as token_response:
                 if token_response.status >= 400:
-                    raise web.HTTPUnauthorized(text="Discord token exchange failed.")
+                    return await self.discord_api_error(token_response, "Discord token exchange failed")
                 token_data = await token_response.json()
             headers = {"Authorization": f"Bearer {token_data['access_token']}"}
             async with session.get("https://discord.com/api/users/@me", headers=headers) as user_response:
                 if user_response.status >= 400:
-                    raise web.HTTPUnauthorized(text="Discord user lookup failed.")
+                    return await self.discord_api_error(user_response, "Discord user lookup failed")
                 user_data = await user_response.json()
 
         session_id = self.create_session(user_data)
@@ -1370,12 +1388,12 @@ class PokerWebServer:
         async with ClientSession() as session:
             async with session.post("https://discord.com/api/oauth2/token", data=token_payload) as token_response:
                 if token_response.status >= 400:
-                    raise web.HTTPUnauthorized(text="Discord token exchange failed.")
+                    return await self.discord_api_error(token_response, "Discord token exchange failed")
                 token_data = await token_response.json()
             headers = {"Authorization": f"Bearer {token_data['access_token']}"}
             async with session.get("https://discord.com/api/users/@me", headers=headers) as user_response:
                 if user_response.status >= 400:
-                    raise web.HTTPUnauthorized(text="Discord user lookup failed.")
+                    return await self.discord_api_error(user_response, "Discord user lookup failed")
                 user_data = await user_response.json()
 
         session_id = self.create_session(user_data)
@@ -1390,6 +1408,21 @@ class PokerWebServer:
         )
         self.set_session_cookie(response, session_id)
         return response
+
+    async def discord_api_error(self, response: ClientResponse, fallback: str) -> web.Response:
+        status = response.status
+        try:
+            body = await response.text()
+        except Exception:
+            body = ""
+        detail = body.strip()
+        try:
+            parsed = json.loads(detail) if detail else {}
+            detail = parsed.get("error_description") or parsed.get("error") or detail
+        except json.JSONDecodeError:
+            pass
+        message = f"{fallback}: {detail}" if detail else fallback
+        return web.json_response({"ok": False, "error": message, "status": status}, status=400)
 
     async def logout(self, request: web.Request) -> web.Response:
         session_id = request.cookies.get("poker_session", "")

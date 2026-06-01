@@ -9,6 +9,7 @@ from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
 from poker_bot.game import Action, Phase
 from poker_bot.table_views import serialize_public_table, serialize_viewer_table
+from poker_bot.web_server import APP_BUILD, HTML, LOBBY_HTML
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -123,6 +124,14 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.public_base_url, "https://example.com")
         self.assertEqual(config.discord_client_id, "123")
         self.assertEqual(config.discord_redirect_uri, "https://example.com/oauth/callback")
+
+    def test_activity_html_uses_current_auth_message(self):
+        combined = HTML + LOBBY_HTML
+
+        self.assertIn(APP_BUILD, combined)
+        self.assertIn("Activity SDK unavailable", combined)
+        self.assertNotIn("Discord authorization did not start", combined)
+        self.assertNotIn("Use the Open Poker App button in Discord", combined)
 
 
 if __name__ == "__main__":
