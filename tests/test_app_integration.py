@@ -130,6 +130,8 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(APP_BUILD, combined)
         self.assertIn("Activity SDK unavailable", combined)
+        self.assertIn("function activityUrl(path)", combined)
+        self.assertIn("frame_id", combined)
         self.assertNotIn("Discord authorization did not start", combined)
         self.assertNotIn("Use the Open Poker App button in Discord", combined)
 

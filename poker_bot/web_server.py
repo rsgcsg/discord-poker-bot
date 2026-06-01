@@ -511,6 +511,14 @@ HTML = """
       }[char]));
     }
 
+    function hasActivityFrame() {
+      return new URLSearchParams(window.location.search).has('frame_id');
+    }
+
+    function activityUrl(path) {
+      return hasActivityFrame() ? `${path}${window.location.search}` : path;
+    }
+
     function render(data) {
       latest = data;
       image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
@@ -559,7 +567,7 @@ HTML = """
           <h2 class="panel-title drag-handle" data-drag-handle>Login</h2>
           ${status}
           <button class="primary" data-auth-action="retry" data-client-id="${html(data.activity_client_id || '')}">Retry Discord Authorization</button>
-          <a class="button secondary" href="/">Back to Lobby</a>
+          <a class="button secondary" href="${html(activityUrl('/'))}">Back to Lobby</a>
           <a class="button secondary" href="/login?next=${encodeURIComponent(location.pathname)}">Browser Backup</a>
           <div id="authMessage" class="message"></div>
         `;
@@ -570,7 +578,7 @@ HTML = """
           <h2 class="panel-title drag-handle" data-drag-handle>Seat</h2>
           <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
           <button class="primary" data-auth-action="join">Join This Table</button>
-          <a class="button secondary" href="/">Back to Lobby</a>
+          <a class="button secondary" href="${html(activityUrl('/'))}">Back to Lobby</a>
           <a class="button secondary" href="/logout?next=${encodeURIComponent(location.pathname)}">Log out</a>
           <div id="authMessage" class="message"></div>
         `;
@@ -579,7 +587,7 @@ HTML = """
       authPanel.innerHTML = `
         <h2 class="panel-title drag-handle" data-drag-handle>Seat</h2>
         <div class="row"><span>Signed in</span><strong>${html(data.viewer_name)}</strong></div>
-        <a class="button secondary" href="/">Back to Lobby</a>
+        <a class="button secondary" href="${html(activityUrl('/'))}">Back to Lobby</a>
         ${data.hand_running ? '' : '<button data-auth-action="leave">Leave Table</button>'}
         <div id="authMessage" class="message"></div>
       `;
@@ -718,6 +726,12 @@ HTML = """
     async function startDiscordActivityAuth(clientId) {
       if (activityAuthRunning) return;
       activityAuthAttempted = true;
+      if (!hasActivityFrame()) {
+        activityAuthFailed = true;
+        activityAuthError = 'frame_id is missing. This page was opened without Discord Activity query parameters.';
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId || '' });
+        return;
+      }
       if (!clientId) {
         activityAuthFailed = true;
         activityAuthError = 'DISCORD_CLIENT_ID is missing on the server.';
@@ -953,12 +967,20 @@ LOBBY_HTML = """
       }[char]));
     }
 
+    function hasActivityFrame() {
+      return new URLSearchParams(window.location.search).has('frame_id');
+    }
+
+    function activityUrl(path) {
+      return hasActivityFrame() ? `${path}${window.location.search}` : path;
+    }
+
     function render(data) {
       latest = data;
       viewer.textContent = data.authenticated ? data.viewer_name : 'Not signed in';
       renderAuthPanel(data);
       if (data.authenticated && data.launch_table_id) {
-        window.location.href = `/table/${data.launch_table_id}`;
+        window.location.href = activityUrl(`/table/${data.launch_table_id}`);
         return;
       }
       tables.innerHTML = data.tables.map(table => `
@@ -967,7 +989,7 @@ LOBBY_HTML = """
             <h3>${table.mode.toUpperCase()} Table ${table.channel_id}</h3>
             <p>${table.players.length} players - ${table.phase} - blinds ${table.small_blind}/${table.big_blind}</p>
           </div>
-          <a class="button" href="/table/${table.channel_id}">Open</a>
+          <a class="button" href="${html(activityUrl('/table/' + table.channel_id))}">Open</a>
         </div>
       `).join('') || '<p>No live tables yet. Create one with /poker_online_create or /poker_offline_create.</p>';
       if (!data.authenticated && !activityAuthAttempted && data.activity_client_id) {
@@ -1007,6 +1029,12 @@ LOBBY_HTML = """
     async function startDiscordActivityAuth(clientId) {
       if (activityAuthRunning) return;
       activityAuthAttempted = true;
+      if (!hasActivityFrame()) {
+        activityAuthFailed = true;
+        activityAuthError = 'frame_id is missing. This page was opened without Discord Activity query parameters.';
+        renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId || '' });
+        return;
+      }
       if (!clientId) {
         activityAuthFailed = true;
         activityAuthError = 'DISCORD_CLIENT_ID is missing on the server.';
