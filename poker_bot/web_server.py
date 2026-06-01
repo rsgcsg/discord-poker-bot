@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import secrets
+import time
 from urllib.parse import urlencode
 from typing import TypedDict
 
@@ -21,7 +22,7 @@ from .table_views import serialize_viewer_table
 
 logger = logging.getLogger(__name__)
 DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@2.5.0/es2022/embedded-app-sdk.bundle.mjs"
-APP_BUILD = "activity-auth-v4"
+APP_BUILD = "activity-auth-v5"
 NO_STORE_HEADERS = {
     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
     "Pragma": "no-cache",
@@ -340,7 +341,8 @@ HTML = """
     </main>
   </div>
   <script>
-    const APP_BUILD = "activity-auth-v4";
+    const APP_BUILD = "activity-auth-v5";
+    const ACTIVITY_CLIENT_ID = "__POKER_ACTIVITY_CLIENT_ID__";
     const parts = window.location.pathname.split('/').filter(Boolean);
     const tableId = parts[1];
     const image = document.getElementById('tableImage');
@@ -360,6 +362,9 @@ HTML = """
     let activityAuthRunning = false;
     let activityAuthFailed = false;
     let activityAuthError = '';
+    let discordSdk = null;
+    let discordSdkClientId = '';
+    let discordSdkReadyPromise = null;
 
     const tableFactObjects = [
       { label: 'Game', value: data => `${data.mode.toUpperCase()} Texas Hold'em` },
@@ -519,6 +524,15 @@ HTML = """
       return hasActivityFrame() ? `${path}${window.location.search}` : path;
     }
 
+    function activityContextText() {
+      const params = new URLSearchParams(window.location.search);
+      const frame = params.get('frame_id') ? 'yes' : 'no';
+      const instance = params.get('instance_id') ? 'yes' : 'no';
+      const platform = params.get('platform') || 'unknown';
+      const embedded = window.parent !== window ? 'yes' : 'no';
+      return `context: embedded=${embedded}, frame_id=${frame}, instance_id=${instance}, platform=${platform}, host=${window.location.host}, path=${window.location.pathname}`;
+    }
+
     function render(data) {
       latest = data;
       image.src = `/api/tables/${tableId}/image?v=${Date.now()}`;
@@ -599,7 +613,7 @@ HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
+      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. ${activityContextText()}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     function updatePlayerSelects(data) {
@@ -743,9 +757,7 @@ HTML = """
       activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
-        const { DiscordSDK } = await importDiscordSdk();
-        const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 20000);
+        const discordSdk = await primeDiscordSdk(clientId);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -770,6 +782,25 @@ HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    function primeDiscordSdk(clientId) {
+      const resolvedClientId = clientId || ACTIVITY_CLIENT_ID;
+      if (!resolvedClientId) return Promise.reject(new Error('DISCORD_CLIENT_ID is missing on the server.'));
+      if (discordSdkReadyPromise && discordSdkClientId === resolvedClientId) return discordSdkReadyPromise;
+      discordSdkClientId = resolvedClientId;
+      discordSdkReadyPromise = (async () => {
+        const { DiscordSDK } = await importDiscordSdk();
+        discordSdk = new DiscordSDK(resolvedClientId);
+        await withTimeout(discordSdk.ready(), 30000);
+        return discordSdk;
+      })().catch(error => {
+        discordSdk = null;
+        discordSdkClientId = '';
+        discordSdkReadyPromise = null;
+        throw error;
+      });
+      return discordSdkReadyPromise;
     }
 
     async function importDiscordSdk() {
@@ -808,6 +839,9 @@ HTML = """
       }
     }
 
+    if (hasActivityFrame() && ACTIVITY_CLIENT_ID) {
+      primeDiscordSdk(ACTIVITY_CLIENT_ID).catch(() => {});
+    }
     setupDraggableWindows();
     refresh();
     setInterval(refresh, 1500);
@@ -935,7 +969,8 @@ LOBBY_HTML = """
     </section>
   </main>
   <script>
-    const APP_BUILD = "activity-auth-v4";
+    const APP_BUILD = "activity-auth-v5";
+    const ACTIVITY_CLIENT_ID = "__POKER_ACTIVITY_CLIENT_ID__";
     const viewer = document.getElementById('viewer');
     const authPanel = document.getElementById('authPanel');
     const tables = document.getElementById('tables');
@@ -944,6 +979,9 @@ LOBBY_HTML = """
     let activityAuthRunning = false;
     let activityAuthFailed = false;
     let activityAuthError = '';
+    let discordSdk = null;
+    let discordSdkClientId = '';
+    let discordSdkReadyPromise = null;
 
     authPanel.addEventListener('click', event => {
       const target = event.target.closest('[data-auth-action]');
@@ -973,6 +1011,15 @@ LOBBY_HTML = """
 
     function activityUrl(path) {
       return hasActivityFrame() ? `${path}${window.location.search}` : path;
+    }
+
+    function activityContextText() {
+      const params = new URLSearchParams(window.location.search);
+      const frame = params.get('frame_id') ? 'yes' : 'no';
+      const instance = params.get('instance_id') ? 'yes' : 'no';
+      const platform = params.get('platform') || 'unknown';
+      const embedded = window.parent !== window ? 'yes' : 'no';
+      return `context: embedded=${embedded}, frame_id=${frame}, instance_id=${instance}, platform=${platform}, host=${window.location.host}, path=${window.location.pathname}`;
     }
 
     function render(data) {
@@ -1023,7 +1070,7 @@ LOBBY_HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
+      return `Activity SDK unavailable.${detail} Build: ${APP_BUILD}. ${activityContextText()}. Launch this app from Discord with /poker_open table_id. If this is already inside Discord, check Activity URL Mapping and Supported Platforms in Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     async function startDiscordActivityAuth(clientId) {
@@ -1046,9 +1093,7 @@ LOBBY_HTML = """
       activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
-        const { DiscordSDK } = await importDiscordSdk();
-        const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 20000);
+        const discordSdk = await primeDiscordSdk(clientId);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -1073,6 +1118,25 @@ LOBBY_HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    function primeDiscordSdk(clientId) {
+      const resolvedClientId = clientId || ACTIVITY_CLIENT_ID;
+      if (!resolvedClientId) return Promise.reject(new Error('DISCORD_CLIENT_ID is missing on the server.'));
+      if (discordSdkReadyPromise && discordSdkClientId === resolvedClientId) return discordSdkReadyPromise;
+      discordSdkClientId = resolvedClientId;
+      discordSdkReadyPromise = (async () => {
+        const { DiscordSDK } = await importDiscordSdk();
+        discordSdk = new DiscordSDK(resolvedClientId);
+        await withTimeout(discordSdk.ready(), 30000);
+        return discordSdk;
+      })().catch(error => {
+        discordSdk = null;
+        discordSdkClientId = '';
+        discordSdkReadyPromise = null;
+        throw error;
+      });
+      return discordSdkReadyPromise;
     }
 
     async function importDiscordSdk() {
@@ -1111,6 +1175,9 @@ LOBBY_HTML = """
       }
     }
 
+    if (hasActivityFrame() && ACTIVITY_CLIENT_ID) {
+      primeDiscordSdk(ACTIVITY_CLIENT_ID).catch(() => {});
+    }
     refresh().catch(error => {
       viewer.textContent = 'Disconnected';
       authPanel.innerHTML = `<p class="message">${html(error.message)}</p>`;
@@ -1168,7 +1235,7 @@ class PokerWebServer:
             await self.runner.cleanup()
 
     async def index(self, request: web.Request) -> web.Response:
-        return self.no_store_response(LOBBY_HTML, "text/html")
+        return self.html_response(LOBBY_HTML)
 
     async def healthz(self, request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "tables": len(self.registry.tables()), "build": APP_BUILD}, headers=NO_STORE_HEADERS)
@@ -1183,10 +1250,14 @@ class PokerWebServer:
         return self.no_store_response(self.discord_sdk_source, "text/javascript")
 
     async def table_page(self, request: web.Request) -> web.Response:
-        return self.no_store_response(HTML, "text/html")
+        return self.html_response(HTML)
 
     def no_store_response(self, text: str, content_type: str) -> web.Response:
         return web.Response(text=text, content_type=content_type, headers=NO_STORE_HEADERS)
+
+    def html_response(self, template: str) -> web.Response:
+        html = template.replace('"__POKER_ACTIVITY_CLIENT_ID__"', json.dumps(self.config.discord_client_id))
+        return self.no_store_response(html, "text/html")
 
     async def lobby_api(self, request: web.Request) -> web.Response:
         user = self.current_user(request)

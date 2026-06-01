@@ -9,7 +9,7 @@ from poker_bot.storage import StatsStore
 from poker_bot.sync import NoopSyncBackend
 from poker_bot.game import Action, Phase
 from poker_bot.table_views import serialize_public_table, serialize_viewer_table
-from poker_bot.web_server import APP_BUILD, HTML, LOBBY_HTML
+from poker_bot.web_server import APP_BUILD, HTML, LOBBY_HTML, PokerWebServer
 
 
 class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -131,9 +131,33 @@ class AppIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(APP_BUILD, combined)
         self.assertIn("Activity SDK unavailable", combined)
         self.assertIn("function activityUrl(path)", combined)
+        self.assertIn("function primeDiscordSdk(clientId)", combined)
+        self.assertIn("activityContextText", combined)
         self.assertIn("frame_id", combined)
         self.assertNotIn("Discord authorization did not start", combined)
         self.assertNotIn("Use the Open Poker App button in Discord", combined)
+
+    def test_activity_html_injects_client_id(self):
+        registry = TableRegistry(StatsStore(":memory:"), NoopSyncBackend())
+        config = AppConfig(
+            discord_token="token",
+            db_path=":memory:",
+            discord_guild_id=None,
+            discord_client_id="123456",
+            discord_client_secret="secret",
+            discord_redirect_uri="https://example.com/oauth/callback",
+            public_base_url="https://example.com",
+            web_host="127.0.0.1",
+            web_port=8765,
+            session_secret="session",
+            sync_event_log=None,
+        )
+        server = PokerWebServer(registry, config)
+
+        response = server.html_response(LOBBY_HTML)
+
+        self.assertIn('const ACTIVITY_CLIENT_ID = "123456";', response.text)
+        self.assertNotIn("__POKER_ACTIVITY_CLIENT_ID__", response.text)
 
 
 if __name__ == "__main__":
