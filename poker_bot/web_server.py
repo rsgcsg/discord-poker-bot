@@ -21,6 +21,13 @@ from .table_views import serialize_viewer_table
 
 logger = logging.getLogger(__name__)
 DISCORD_SDK_URL = "https://esm.sh/@discord/embedded-app-sdk@2.5.0/es2022/embedded-app-sdk.bundle.mjs"
+APP_BUILD = "activity-auth-v3"
+NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Poker-Build": APP_BUILD,
+}
 
 
 class UserSession(TypedDict, total=False):
@@ -333,6 +340,7 @@ HTML = """
     </main>
   </div>
   <script>
+    const APP_BUILD = "activity-auth-v3";
     const parts = window.location.pathname.split('/').filter(Boolean);
     const tableId = parts[1];
     const image = document.getElementById('tableImage');
@@ -583,7 +591,7 @@ HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Discord Activity login is not available in this window.${detail} Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
+      return `Discord Activity login is not available in this window.${detail} Build: ${APP_BUILD}. Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     function updatePlayerSelects(data) {
@@ -721,9 +729,9 @@ HTML = """
       activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
-        const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
+        const { DiscordSDK } = await importDiscordSdk();
         const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 10000);
+        await withTimeout(discordSdk.ready(), 20000);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -748,6 +756,14 @@ HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    async function importDiscordSdk() {
+      try {
+        return await import('/.proxy/assets/discord-sdk.mjs');
+      } catch (error) {
+        return await import('/assets/discord-sdk.mjs');
+      }
     }
 
     async function exchangeDiscordCode(code) {
@@ -896,6 +912,7 @@ LOBBY_HTML = """
     </section>
   </main>
   <script>
+    const APP_BUILD = "activity-auth-v3";
     const viewer = document.getElementById('viewer');
     const authPanel = document.getElementById('authPanel');
     const tables = document.getElementById('tables');
@@ -975,7 +992,7 @@ LOBBY_HTML = """
 
     function activityAuthFailureText() {
       const detail = activityAuthError ? ` Detail: ${activityAuthError}` : '';
-      return `Discord Activity login is not available in this window.${detail} Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
+      return `Discord Activity login is not available in this window.${detail} Build: ${APP_BUILD}. Open from Discord with Open Poker App or /poker_open table_id. If you already did that, check Activity URL Mapping and Supported Platforms in Discord Developer Portal. Browser Backup still works for normal web login.`;
     }
 
     async function startDiscordActivityAuth(clientId) {
@@ -992,9 +1009,9 @@ LOBBY_HTML = """
       activityAuthError = '';
       renderAuthPanel(latest || { authenticated: false, activity_client_id: clientId });
       try {
-        const { DiscordSDK } = await import('/assets/discord-sdk.mjs');
+        const { DiscordSDK } = await importDiscordSdk();
         const discordSdk = new DiscordSDK(clientId);
-        await withTimeout(discordSdk.ready(), 10000);
+        await withTimeout(discordSdk.ready(), 20000);
         const { code } = await discordSdk.commands.authorize({
           client_id: clientId,
           response_type: 'code',
@@ -1019,6 +1036,14 @@ LOBBY_HTML = """
         promise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('Discord Activity SDK is not available here')), ms)),
       ]);
+    }
+
+    async function importDiscordSdk() {
+      try {
+        return await import('/.proxy/assets/discord-sdk.mjs');
+      } catch (error) {
+        return await import('/assets/discord-sdk.mjs');
+      }
     }
 
     async function exchangeDiscordCode(code) {
@@ -1097,10 +1122,10 @@ class PokerWebServer:
             await self.runner.cleanup()
 
     async def index(self, request: web.Request) -> web.Response:
-        return web.Response(text=LOBBY_HTML, content_type="text/html")
+        return self.no_store_response(LOBBY_HTML, "text/html")
 
     async def healthz(self, request: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "tables": len(self.registry.tables())})
+        return web.json_response({"ok": True, "tables": len(self.registry.tables()), "build": APP_BUILD}, headers=NO_STORE_HEADERS)
 
     async def discord_sdk_asset(self, request: web.Request) -> web.Response:
         if self.discord_sdk_source is None:
@@ -1109,10 +1134,13 @@ class PokerWebServer:
                     if response.status >= 400:
                         raise web.HTTPBadGateway(text="Discord Embedded App SDK could not be loaded.")
                     self.discord_sdk_source = await response.text()
-        return web.Response(text=self.discord_sdk_source, content_type="text/javascript")
+        return self.no_store_response(self.discord_sdk_source, "text/javascript")
 
     async def table_page(self, request: web.Request) -> web.Response:
-        return web.Response(text=HTML, content_type="text/html")
+        return self.no_store_response(HTML, "text/html")
+
+    def no_store_response(self, text: str, content_type: str) -> web.Response:
+        return web.Response(text=text, content_type=content_type, headers=NO_STORE_HEADERS)
 
     async def lobby_api(self, request: web.Request) -> web.Response:
         user = self.current_user(request)
@@ -1127,6 +1155,7 @@ class PokerWebServer:
                 "viewer_name": user["username"] if user else None,
                 "activity_client_id": self.config.discord_client_id,
                 "launch_table_id": launch_table_id,
+                "app_build": APP_BUILD,
                 "tables": [table.snapshot() for table in tables],
             }
         )
@@ -1142,6 +1171,7 @@ class PokerWebServer:
             data["authenticated"] = user is not None
             data["viewer_name"] = user["username"] if user else None
             data["activity_client_id"] = self.config.discord_client_id
+            data["app_build"] = APP_BUILD
             return web.json_response(data)
         except ValueError as exc:
             raise web.HTTPNotFound(text=str(exc))
